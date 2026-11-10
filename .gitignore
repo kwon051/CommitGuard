@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Trivy 테스트용 취약 패키지 저장소 (scripts/make_vuln_repo.py로 생성)
+samples/vuln-repo/
