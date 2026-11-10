@@ -1,0 +1,7 @@
+services:
+  queue:
+    image: valkey/valkey:8
+  worker:
+    build: ./worker
+    depends_on:
+      - queue
