@@ -1,0 +1,119 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CommitGuard | 저장소 보안 검사</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f4f6f2;
+            font-family: Arial, sans-serif;
+            color: #26382e;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 540px;
+            padding: 40px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.07);
+            text-align: center;
+        }
+
+        h1 {
+            color: #426752;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .description {
+            color: #66736b;
+            line-height: 1.7;
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            text-align: left;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            border: 1px solid #cdd8ce;
+            border-radius: 8px;
+            font-size: 15px;
+        }
+
+        input:focus {
+            outline: 2px solid #729b80;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 20px;
+            padding: 15px;
+            background: #426752;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #31503e;
+        }
+
+        .notice {
+            margin-top: 24px;
+            font-size: 13px;
+            color: #849087;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="container">
+        <h1>CommitGuard</h1>
+
+        <p class="description">
+            커밋 지킴이<br>
+            GitHub 저장소의 보안 위험을 점검합니다.
+        </p>
+
+        <form action="/scan" method="POST">
+            <label for="repo_url">GitHub 저장소 주소</label>
+
+            <input
+                type="url"
+                id="repo_url"
+                name="repo_url"
+                placeholder="https://github.com/owner/repository"
+                required
+            >
+
+            <button type="submit">보안 검사 시작</button>
+        </form>
+
+        <p class="notice">
+            GitHub 저장소 주소를 입력하면<br>
+            비밀정보 유출 및 취약한 패키지를 점검합니다.
+        </p>
+    </main>
+</body>
+</html>
