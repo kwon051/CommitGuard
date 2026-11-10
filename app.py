@@ -102,12 +102,35 @@ def load_sample_findings():
     return findings
 
 
+
 @app.route("/results")
 def results():
     """보안 검사 결과 화면을 보여준다."""
+
+    sample_files = [
+        "gitleaks-findings.json",
+        "trivy-findings.json",
+    ]
+
+    # 필요한 샘플 JSON 파일이 있는지 확인
+    missing_files = [
+        filename
+        for filename in sample_files
+        if not (SAMPLE_DIR / filename).is_file()
+    ]
+
+    # 파일이 없으면 안내 화면 표시
+    if missing_files:
+        return render_template(
+            "result.html",
+            findings=[],
+            missing_files=missing_files,
+        ), 503
+
     findings = load_sample_findings()
 
     return render_template(
         "result.html",
         findings=findings,
+        missing_files=[],
     )
