@@ -1,0 +1,74 @@
+[
+  {
+    "tool": "gitleaks",
+    "rule_id": "github-pat",
+    "fingerprint": "6333f03a71f03729cf449ecad7aec78446fcd2f3:.env:github-pat:4",
+    "severity": "CRITICAL",
+    "file": ".env",
+    "line": 4,
+    "title": "GitHub 개인 접근 토큰 노출 (ghp_****)",
+    "why": "이 토큰으로 내 GitHub 계정의 저장소를 읽거나 수정할 수 있습니다.",
+    "fix": "1) GitHub Settings > Developer settings > Tokens에서 토큰 삭제 2) 필요한 권한만 준 새 토큰 발급 후 .env에 저장 3) Git 기록에서 삭제 4) .gitignore에 .env 추가",
+    "status": "open"
+  },
+  {
+    "tool": "gitleaks",
+    "rule_id": "aws-access-token",
+    "fingerprint": "7440b529b4762aea4ace5724dee19844f4b0141b:config/settings.py:aws-access-token:2",
+    "severity": "CRITICAL",
+    "file": "config/settings.py",
+    "line": 2,
+    "title": "AWS 접근 키 노출 (AKIA****)",
+    "why": "저장소를 볼 수 있는 사람은 누구나 이 키로 AWS 계정을 사용할 수 있습니다. 서버를 몰래 띄워 요금이 청구될 수 있습니다.",
+    "fix": "1) AWS 콘솔 IAM에서 키 비활성화·삭제 2) 새 키 발급 후 .env에 저장 3) Git 기록에서 삭제",
+    "status": "open"
+  },
+  {
+    "tool": "gitleaks",
+    "rule_id": "private-key",
+    "fingerprint": "39d9cf1a101e6d8027a001cfe2d564dc91e89e03:deploy/id_rsa:private-key:1",
+    "severity": "CRITICAL",
+    "file": "deploy/id_rsa",
+    "line": 1,
+    "title": "개인 키 파일 노출",
+    "why": "이 키로 서버에 접속하거나 서명·암호화를 흉내 낼 수 있습니다. 개인 키는 절대 저장소에 두면 안 됩니다.",
+    "fix": "1) 이 키를 쓰는 서버·서비스에서 공개 키 등록 해제 2) 새 키 쌍을 만들어 저장소 밖에 보관 3) Git 기록에서 삭제",
+    "status": "open"
+  },
+  {
+    "tool": "gitleaks",
+    "rule_id": "generic-api-key",
+    "fingerprint": "6333f03a71f03729cf449ecad7aec78446fcd2f3:.env:generic-api-key:3",
+    "severity": "HIGH",
+    "file": ".env",
+    "line": 3,
+    "title": "비밀번호·API 키 값 노출: DB_PASSWORD (1GKL****)",
+    "why": "비밀번호나 키로 보이는 값이 코드에 그대로 적혀 있어, 저장소를 보는 사람 누구나 쓸 수 있습니다.",
+    "fix": "1) 해당 비밀번호·키 변경 2) 코드 대신 .env에 저장하고 os.environ으로 읽기 3) Git 기록에서 삭제 4) .gitignore에 .env 추가",
+    "status": "open"
+  },
+  {
+    "tool": "gitleaks",
+    "rule_id": "generic-api-key",
+    "fingerprint": "7440b529b4762aea4ace5724dee19844f4b0141b:config/settings.py:generic-api-key:3",
+    "severity": "HIGH",
+    "file": "config/settings.py",
+    "line": 3,
+    "title": "비밀번호·API 키 값 노출: AWS_SECRET_ACCESS_KEY (oIzj****)",
+    "why": "비밀번호나 키로 보이는 값이 코드에 그대로 적혀 있어, 저장소를 보는 사람 누구나 쓸 수 있습니다.",
+    "fix": "1) 해당 비밀번호·키 변경 2) 코드 대신 .env에 저장하고 os.environ으로 읽기 3) Git 기록에서 삭제",
+    "status": "open"
+  },
+  {
+    "tool": "gitleaks",
+    "rule_id": "slack-bot-token",
+    "fingerprint": "6333f03a71f03729cf449ecad7aec78446fcd2f3:notify/slack.py:slack-bot-token:1",
+    "severity": "HIGH",
+    "file": "notify/slack.py",
+    "line": 1,
+    "title": "Slack 봇 토큰 노출 (xoxb****)",
+    "why": "이 토큰으로 워크스페이스에 메시지를 보내거나 대화 내용을 읽을 수 있습니다.",
+    "fix": "1) Slack 앱 설정에서 토큰 재발급(기존 토큰 폐기) 2) 새 토큰을 .env에 저장 3) Git 기록에서 삭제",
+    "status": "open"
+  }
+]
