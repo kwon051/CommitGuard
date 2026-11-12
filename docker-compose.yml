@@ -1,0 +1,52 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5001:5000"
+    environment:
+      VALKEY_HOST: queue
+      VALKEY_PORT: "6379"
+    depends_on:
+      queue:
+        condition: service_healthy
+
+  queue:
+    image: valkey/valkey:8
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build: ./worker
+    volumes:
+      - trivy-cache:/root/.cache/trivy 
+    environment:
+      VALKEY_HOST: queue
+      DB_HOST: db
+    depends_on:
+      queue:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.4
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:
+  trivy-cache:

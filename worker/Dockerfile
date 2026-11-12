@@ -21,8 +21,7 @@ RUN trivy --version
 WORKDIR /app
 COPY scanners/ /app/scanners/
 
-# 이 폴더에는 queue를 소비하는 worker.py가 아직 없으므로
-# 샘플 저장소를 마운트해 검사 모듈을 직접 실행한다.
-# (Trivy는 --entrypoint python ... -m scanners.trivy 로 실행)
-ENTRYPOINT ["python", "-m", "scanners.gitleaks"]
-CMD ["--help"]
+# compose에서는 queue를 지켜보는 worker.py를 실행한다.
+# 검사 모듈만 따로 시험할 때: docker run --entrypoint python <이미지> -m scanners.gitleaks
+COPY worker.py .
+CMD ["python", "worker.py"]
