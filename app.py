@@ -4,6 +4,7 @@ import os
 import re
 import uuid
 
+from pathlib import Path
 import valkey
 from flask import Flask, render_template, request
 
@@ -56,4 +57,80 @@ def scan():
     return (
         f"검사 요청 등록 성공! 작업 번호: {job['job_id']}",
         202,
+    )
+
+
+
+# 보안 검사 결과 샘플 파일 위치
+SAMPLE_DIR = Path(__file__).resolve().parent / "samples"
+
+# 위험도 정렬 순서 (숫자가 작을수록 위험)
+SEVERITY_ORDER = {
+    "CRITICAL": 0,
+    "HIGH": 1,
+    "MEDIUM": 2,
+    "LOW": 3,
+    "UNKNOWN": 4,
+}
+
+
+def load_sample_findings():
+    """Gitleaks와 Trivy 샘플 JSON을 불러온다."""
+    findings = []
+
+    sample_files = [
+        "gitleaks-findings.json",
+        "trivy-findings.json",
+    ]
+
+    for filename in sample_files:
+        file_path = SAMPLE_DIR / filename
+
+        with file_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        findings.extend(data)
+
+    # 위험도가 높은 결과부터 정렬
+    findings.sort(
+        key=lambda item: SEVERITY_ORDER.get(
+            str(item.get("severity", "UNKNOWN")).upper(),
+            4,
+        )
+    )
+
+    return findings
+
+
+
+@app.route("/results")
+def results():
+    """보안 검사 결과 화면을 보여준다."""
+
+    sample_files = [
+        "gitleaks-findings.json",
+        "trivy-findings.json",
+    ]
+
+    # 필요한 샘플 JSON 파일이 있는지 확인
+    missing_files = [
+        filename
+        for filename in sample_files
+        if not (SAMPLE_DIR / filename).is_file()
+    ]
+
+    # 파일이 없으면 안내 화면 표시
+    if missing_files:
+        return render_template(
+            "result.html",
+            findings=[],
+            missing_files=missing_files,
+        ), 503
+
+    findings = load_sample_findings()
+
+    return render_template(
+        "result.html",
+        findings=findings,
+        missing_files=[],
     )

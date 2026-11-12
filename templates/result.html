@@ -1,0 +1,216 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CommitGuard | 검사 결과</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 40px 20px;
+            background: #f4f6f2;
+            color: #26382e;
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: auto;
+        }
+
+        h1 { color: #426752; }
+
+        .summary {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            margin: 24px 0;
+            box-shadow: 0 4px 15px #0000000a;
+        }
+
+        .finding {
+            background: white;
+            padding: 24px;
+            margin-bottom: 18px;
+            border-radius: 12px;
+            border-left: 6px solid #aaa;
+            box-shadow: 0 4px 15px #0000000a;
+        }
+
+        .risk-critical { border-left-color: #b91c1c; }
+        .risk-high { border-left-color: #ea580c; }
+        .risk-medium { border-left-color: #d97706; }
+        .risk-low { border-left-color: #16a34a; }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 6px;
+            background: #edf1ed;
+            font-size: 13px;
+            font-weight: bold;
+            margin-right: 6px;
+        }
+
+        .detail {
+            margin: 12px 0;
+            line-height: 1.7;
+            overflow-wrap: anywhere;
+        }
+
+        .detail strong { color: #426752; }
+
+        .fix {
+            background: #eef5ef;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 14px;
+            line-height: 1.7;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #426752;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+<main class="container">
+    <a href="/" class="back">← 저장소 입력 화면으로</a>
+
+    <h1>CommitGuard 보안 검사 결과</h1>
+    <p>Gitleaks와 Trivy의 보안 검사 결과입니다.</p>
+
+    <section class="summary" style="background: #fff8e6;">
+        <strong>시연용 샘플 데이터</strong>
+        <p>
+            현재 화면은 Gitleaks와 Trivy의 샘플 JSON을
+            사용한 테스트 결과입니다.
+            실제 저장소 검사 결과는 DB 연동 후 제공됩니다.
+        </p>
+    </section>
+
+    {% set items = findings | default([], true) %}
+
+{% if missing_files | default([]) %}
+<section class="summary" style="background: #fff0f0;">
+    <strong>샘플 데이터 준비 중</strong>
+    <p>
+        검사 결과를 표시하는 데 필요한 JSON 파일이
+        아직 준비되지 않았습니다.
+    </p>
+    <p>
+        누락된 파일: {{ missing_files | join(', ') }}
+    </p>
+</section>
+{% endif %}
+
+    
+<section class="summary">
+    <h2>검사 결과 요약</h2>
+
+    <p>
+        발견된 보안 항목:
+        <strong>{{ items | length }}건</strong>
+    </p>
+
+    <hr>
+
+    <p style="color: #b91c1c;">
+        <strong>CRITICAL (매우 위험):</strong>
+        {{ items | selectattr('severity', 'equalto', 'CRITICAL') | list | length }}건
+    </p>
+
+    <p style="color: #ea580c;">
+        <strong>HIGH (높음):</strong>
+        {{ items | selectattr('severity', 'equalto', 'HIGH') | list | length }}건
+    </p>
+
+    <p style="color: #d97706;">
+        <strong>MEDIUM (보통):</strong>
+        {{ items | selectattr('severity', 'equalto', 'MEDIUM') | list | length }}건
+    </p>
+
+    <p style="color: #16a34a;">
+        <strong>LOW (낮음):</strong>
+        {{ items | selectattr('severity', 'equalto', 'LOW') | list | length }}건
+    </p>
+
+    <p style="color: #64748b;">
+        <strong>UNKNOWN (미분류):</strong>
+        {{ items | selectattr('severity', 'equalto', 'UNKNOWN') | list | length }}건
+    </p>
+</section>
+
+
+    {% if items %}
+        {% for finding in items %}
+        <article class="finding risk-{{ finding.severity | default('unknown', true) | lower }}">
+
+            <h2>{{ finding.title }}</h2>
+
+            <span class="badge">
+                위험도: {{ finding.severity | default('UNKNOWN', true) }}
+            </span>
+
+            <span class="badge">
+                검사 도구: {{ finding.tool }}
+            </span>
+
+            <div class="detail">
+                <strong>탐지 규칙:</strong> {{ finding.rule_id }}
+            </div>
+
+            <div class="detail">
+                <strong>파일명:</strong> {{ finding.file }}
+            </div>
+
+            <div class="detail">
+                <strong>줄 번호:</strong>
+                {% if finding.line is not none %}
+                    {{ finding.line }}
+                {% else %}
+                    확인 불가
+                {% endif %}
+            </div>
+
+            <div class="detail">
+                <strong>왜 위험한가요?</strong>
+                <p>{{ finding.why }}</p>
+            </div>
+
+            <div class="fix">
+                <strong>해결 방법</strong>
+                <p>{{ finding.fix }}</p>
+            </div>
+
+            <div class="detail">
+                <strong>처리 상태:</strong>
+                {% if finding.status == 'open' %}
+                    미해결
+                {% elif finding.status == 'fixed' %}
+                    해결 완료
+                {% elif finding.status == 'ignored' %}
+                    무시됨
+                {% else %}
+                    확인 필요
+                {% endif %}
+            </div>
+
+        </article>
+        {% endfor %}
+    {% else %}
+        <section class="summary">
+            <p>표시할 보안 검사 결과가 없습니다.</p>
+        </section>
+    {% endif %}
+</main>
+</body>
+</html>
