@@ -38,6 +38,27 @@ Gitleaks **8.30.1**로 원래의 규칙별 탐지 대상 5개·비탐지 대상 
 - worker Docker 이미지 빌드 성공. 컨테이너의 `/app/gitleaks.toml`로 국내 규칙 4종의 실제 Git 검사·변환·마스킹·fingerprint 보존을 확인했다.
 - 현재 파일을 `gitleaks dir`로 검사한 결과 0건. 이는 과거 Git 이력까지 0건이라는 의미는 아니다.
 
+## 공유용 결과 파일
+
+기본 예시 40개(탐지 대상 20개, 비탐지 대상 20개)를 검사한 결과를 저장소에 보관한다.
+
+| 파일 | 내용 |
+| --- | --- |
+| `samples/gitleaks-kr-raw.json` | 비밀값을 가린 Gitleaks 원본 21건. 동일 fingerprint의 중복 1건 포함 |
+| `samples/gitleaks-kr-findings.json` | 공통 형식으로 변환하고 중복을 합친 20건. 국내 규칙별 5건 |
+
+비탐지 예시에는 탐지 결과가 없으므로 JSON에 항목이 생기지 않는다. 두 파일은 기본 예시 40개에 대한 결과이며, 추가 경계·allowlist 테스트의 임시 결과는 포함하지 않는다.
+
+`gitleaks dir`로 검사한 결과라 `File`은 생성된 예시 파일의 상대 경로이고 Git 커밋 정보는 비어 있다. `Fingerprint`는 이 디렉터리 검사에서 Gitleaks가 생성한 값을 그대로 유지한다. 예시 파일은 `tests/test_rules.py`의 `CASES`에서 재생성한다. 개인정보의 식별 숫자는 전부 가리고 API 키는 기존 공통 형식처럼 앞 최대 4자리만 남긴다.
+
+저장소 루트에서 다음 명령으로 공유용 결과를 재생성한다.
+
+```bash
+REQUIRE_GITLEAKS=1 python -m pytest tests/test_rules.py -v --kr-report-dir samples
+```
+
+옵션을 생략하면 테스트는 임시 폴더만 사용한다.
+
 ## 실행
 
 저장소 루트에서 실행한다. Python 테스트 환경에 pytest와 기존 프로젝트 의존성이 필요하다.

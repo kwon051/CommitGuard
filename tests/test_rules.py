@@ -4,6 +4,7 @@
 Gitleaks를 한 번 돌리고, 파일별로 해당 규칙이 잡혔는지 확인한다.
 
 실행: 저장소 루트에서  python -m pytest tests/test_rules.py -v
+  - --kr-report-dir samples 옵션으로 기본 40건의 검사 결과를 저장할 수 있다.
   - gitleaks가 없으면 건너뛴다. CI에서는 REQUIRE_GITLEAKS=1로 건너뛰지 않고 실패하게 한다.
 
 가짜 값 처리:
@@ -19,11 +20,16 @@ import re
 import shutil
 import string
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from worker.scanners.gitleaks import sanitize_raw, to_findings  # noqa: E402
+
 CONFIG = ROOT / "worker" / "gitleaks.toml"
 GITLEAKS = os.environ.get("GITLEAKS_BIN", "gitleaks")
 KR_RULES = ["kr-rrn", "kr-mobile", "kr-student-id", "kr-service-api-key"]
@@ -32,6 +38,9 @@ if shutil.which(GITLEAKS) is None:
     if os.environ.get("REQUIRE_GITLEAKS"):
         raise RuntimeError("gitleaks가 설치되어 있지 않습니다")
     pytest.skip("gitleaks 미설치", allow_module_level=True)
+
+# 검사 cwd가 임시 폴더로 바뀌어도 상대 경로의 GITLEAKS_BIN이 동작하게 한다.
+GITLEAKS = str(Path(shutil.which(GITLEAKS)).resolve())
 
 
 def unmark(text: str) -> str:
@@ -131,7 +140,7 @@ def _name(rule: str, kind: str, i: int) -> str:
 
 
 @pytest.fixture(scope="module")
-def detected(tmp_path_factory):
+def detected(tmp_path_factory, request):
     """모든 예시를 파일로 쓰고 Gitleaks를 한 번 돌려 {(파일명, 규칙)} 집합을 돌려준다."""
     work = tmp_path_factory.mktemp("rule-cases")
     src = work / "src"
@@ -141,13 +150,24 @@ def detected(tmp_path_factory):
 
     report = work / "report.json"
     proc = subprocess.run(
-        [GITLEAKS, "dir", str(src), "--config", str(CONFIG), "--no-banner",
-         "--redact", "--report-format", "json", "--report-path", str(report),
+        [GITLEAKS, "dir", ".", "--config", str(CONFIG), "--no-banner",
+         "--redact=80", "--report-format", "json", "--report-path", str(report),
          "--exit-code", "0", "--log-level", "error"],
-        capture_output=True, text=True, timeout=30,
+        cwd=src, capture_output=True, text=True, timeout=30,
     )
     assert proc.returncode == 0, proc.stderr
-    results = json.loads(report.read_text(encoding="utf-8") or "[]")
+    results = sanitize_raw(json.loads(report.read_text(encoding="utf-8") or "[]"))
+    results.sort(key=lambda r: (r["Fingerprint"], r["Match"], r["Secret"]))
+    # 검사 경로를 상대 경로로 전달해 임시 폴더 이름이 결과에 섞이지 않게 한다.
+    report.write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    report_dir = request.config.getoption("--kr-report-dir")
+    if report_dir:
+        dest = Path(report_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "gitleaks-kr-raw.json").write_text(report.read_text(encoding="utf-8"), encoding="utf-8")
+        (dest / "gitleaks-kr-findings.json").write_text(
+            json.dumps(to_findings(results), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
     return {(Path(r["File"]).name, r["RuleID"]) for r in results}
 
 
