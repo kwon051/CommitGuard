@@ -88,6 +88,8 @@ python -m scanners.trivy --from-raw ../samples/trivy-raw.json --upgrades ../samp
 | file | 패키지가 적힌 파일 |
 | cves | 해결되는 CVE 목록 (finding의 rule_id와 연결할 때 사용) |
 | unfixed_count | 고쳐진 버전이 없어 업그레이드로 해결 안 되는 취약점 수 |
+| unfixed_cves | 업그레이드해도 남는 CVE 목록 (위험도 높은 순, 요약에는 3개까지 표시) |
+| prerelease | 추천 버전이 rc·beta 같은 출시 전 버전이면 true |
 | major_upgrade | 앞자리 버전이 바뀌면 true (예: 0.12.2 → 3.1.3, 코드 수정이 필요할 수 있음) |
 | summary | 화면에 바로 쓸 한 줄 요약 |
 

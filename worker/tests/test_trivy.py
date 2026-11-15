@@ -114,7 +114,7 @@ def test_empty_results():
 # ---------- 업그레이드 정리 (summarize_upgrades) ----------
 
 UPGRADE_FIELDS = {"package", "current_version", "recommended_version", "fixed_count", "max_severity",
-                  "file", "cves", "unfixed_count", "major_upgrade", "summary"}
+                  "file", "cves", "unfixed_count", "unfixed_cves", "major_upgrade", "prerelease", "summary"}
 
 
 def _vuln(cve, pkg="foo", installed="1.0", fixed="", severity="MEDIUM"):
@@ -148,7 +148,7 @@ def test_upgrade_recommends_highest_fixed_version():
 
 
 def test_upgrade_excludes_unfixed():
-    # 고쳐진 버전이 없는 취약점은 해결 수에서 빠지고 unfixed_count로 센다
+    # 고쳐진 버전이 없는 취약점은 해결 수에서 빠지고, 요약에 무엇이 남는지 적힌다
     raw = {"Results": [{"Target": "requirements.txt", "Vulnerabilities": [
         _vuln("CVE-1", fixed="1.2"),
         _vuln("CVE-2"),
@@ -156,11 +156,13 @@ def test_upgrade_excludes_unfixed():
     [u] = trivy.summarize_upgrades(raw)
     assert (u["fixed_count"], u["unfixed_count"]) == (1, 1)
     assert u["cves"] == ["CVE-1"]
+    assert u["unfixed_cves"] == ["CVE-2"]
+    assert u["summary"] == "foo을(를) 1.2 버전으로 올리면 1개 해결, 고쳐진 버전이 없는 1개는 남음 - CVE-2(MEDIUM)"
 
     # 하나도 안 고쳐졌으면 추천 버전은 None
     [u] = trivy.summarize_upgrades({"Results": [{"Target": "requirements.txt", "Vulnerabilities": [_vuln("CVE-2")]}]})
     assert u["recommended_version"] is None
-    assert "고쳐진 버전이 없음" in u["summary"]
+    assert u["summary"] == "foo: 아직 고쳐진 버전이 없음 - CVE-2(MEDIUM)"
 
 
 def test_upgrades_sorted_by_severity_then_count():
@@ -189,7 +191,7 @@ def test_pick_fixed_version_prefers_final():
 
 
 def test_upgrade_does_not_recommend_rc_over_final():
-    # 리뷰 피드백: 1.2.0rc1과 1.2.0이 있으면 정식 1.2.0을 추천해야 한다
+    # 리뷰 피드백: 1.2.0rc1과 1.2.0이 있으면 정식 1.2.0을 추천
     raw = {"Results": [{"Target": "requirements.txt", "Vulnerabilities": [
         _vuln("CVE-1", fixed="1.2.0rc1"),
         _vuln("CVE-2", fixed="1.2.0"),
@@ -197,6 +199,33 @@ def test_upgrade_does_not_recommend_rc_over_final():
     [u] = trivy.summarize_upgrades(raw)
     assert u["recommended_version"] == "1.2.0"
     assert u["major_upgrade"] is False      # 1.0 -> 1.2.0
+
+def test_upgrade_flags_prerelease_recommendation():
+    # 고친 버전이 rc밖에 없으면 추천은 하되, 출시 전 버전이라고 알려 준다
+    raw = {"Results": [{"Target": "requirements.txt", "Vulnerabilities": [_vuln("CVE-1", fixed="2.0.0rc1")]}]}
+    [u] = trivy.summarize_upgrades(raw)
+    assert u["recommended_version"] == "2.0.0rc1"
+    assert u["prerelease"] is True
+    assert "출시 전 버전" in u["summary"]
+    # 샘플은 전부 정식 버전 추천
+    assert all(u["prerelease"] is False for u in trivy.summarize_upgrades(RAW))
+
+
+def test_upgrade_summary_names_remaining_cves():
+    # 남는 CVE는 위험도 높은 순으로 이름과 위험도를 보여 주고, 3개가 넘으면 '외 N개'로 줄인다
+    raw = {"Results": [{"Target": "requirements.txt", "Vulnerabilities": [
+        _vuln("CVE-1", fixed="1.1", severity="LOW"),
+        _vuln("CVE-9", severity="LOW"),
+        _vuln("CVE-8", severity="CRITICAL"),
+        _vuln("CVE-7", severity="MEDIUM"),
+        _vuln("CVE-6", severity="HIGH"),
+        _vuln("CVE-5", severity="HIGH"),
+    ]}]}
+    [u] = trivy.summarize_upgrades(raw)
+    assert u["unfixed_cves"] == ["CVE-8", "CVE-5", "CVE-6", "CVE-7", "CVE-9"]
+    assert u["max_severity"] == "CRITICAL"
+    assert u["summary"] == ("foo을(를) 1.1 버전으로 올리면 1개 해결, 고쳐진 버전이 없는 5개는 남음 - "
+                            "CVE-8(CRITICAL), CVE-5(HIGH), CVE-6(HIGH) 외 2개")
 
 def test_not_a_directory(tmp_path):
     with pytest.raises(trivy.TrivyError):

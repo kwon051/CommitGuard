@@ -161,6 +161,32 @@ def _is_major_upgrade(current: str, recommended: str) -> bool:
     cur, rec = _version_key(current)[0], _version_key(recommended)[0]
     return bool(cur and rec) and cur[0] != rec[0]
 
+UNFIXED_SHOW_MAX = 3   # 요약 문장에 남는 CVE를 몇 개까지 이름으로 보여줄지
+
+
+def _upgrade_summary(pkg: str, recommended: str | None, fixed: int,
+                     unfixed: list[tuple[str, str]], prerelease: bool) -> str:
+    """화면에 바로 쓸 한 줄 요약.
+
+    올려도 남는 취약점이 있으면 무엇인지(CVE와 위험도)까지 같이 적는다.
+    안 그러면 '올리면 해결'만 보고 전부 안전해진 줄 안다.
+    unfixed: [(CVE, 위험도), ...] 위험도 높은 순으로 정렬된 목록
+    """
+    left = ""
+    if unfixed:
+        names = ", ".join(f"{cve}({sev})" for cve, sev in unfixed[:UNFIXED_SHOW_MAX])
+        more = f" 외 {len(unfixed) - UNFIXED_SHOW_MAX}개" if len(unfixed) > UNFIXED_SHOW_MAX else ""
+        left = f"{names}{more}"
+
+    if not recommended:
+        return f"{pkg}: 아직 고쳐진 버전이 없음 - {left}"
+    text = f"{pkg}을(를) {recommended} 버전으로 올리면 {fixed}개 해결"
+    if prerelease:
+        text += " (출시 전 버전이라 정식 버전이 나오면 그 버전 권장)"
+    if unfixed:
+        text += f", 고쳐진 버전이 없는 {len(unfixed)}개는 남음 - {left}"
+    return text
+
 def summarize_upgrades(raw: dict[str, Any]) -> list[dict[str, Any]]:
     """같은 패키지의 취약점을 묶어 'X를 Y 버전으로 올리면 N개 해결' 목록을 만든다.
 
@@ -176,39 +202,44 @@ def summarize_upgrades(raw: dict[str, Any]) -> list[dict[str, Any]]:
             installed = vuln.get("InstalledVersion", "")
             g = groups.setdefault((file, pkg, installed), {
                 "fixed": [],          # 고친 버전 목록
-                "cves": [],           # 고친 버전이 있는 CVE
-                "unfixed": [],        # 고친 버전이 없는 CVE
+                "cves": [],           # 고친 버전이 있는 CVE (중복 제거용)
+                "unfixed": {},        # 고친 버전이 없는 CVE -> 위험도
                 "severities": [],
             })
             cve = vuln.get("VulnerabilityID", "unknown")
             if cve in g["cves"] or cve in g["unfixed"]:
                 continue              # 같은 CVE가 두 번 나오면 한 번만 센다
             sev = vuln.get("Severity", "UNKNOWN").upper()
-            g["severities"].append(sev if sev in SEVERITY_ORDER else "UNKNOWN")
+            sev = sev if sev in SEVERITY_ORDER else "UNKNOWN"
+            g["severities"].append(sev)
             fixed = pick_fixed_version(vuln.get("FixedVersion", ""))
             if fixed:
                 g["fixed"].append(fixed)
                 g["cves"].append(cve)
             else:
-                g["unfixed"].append(cve)
+                g["unfixed"][cve] = sev
 
     upgrades = []
     for (file, pkg, installed), g in groups.items():
         recommended = max(g["fixed"], key=_version_key) if g["fixed"] else None
+        prerelease = bool(recommended) and _version_key(recommended)[1] < _FINAL_STAGE
+        # 남는 CVE를 위험도 높은 순으로 (같으면 CVE 번호 순)
+        unfixed = sorted(g["unfixed"].items(), key=lambda kv: (SEVERITY_ORDER[kv[1]], kv[0]))
         upgrades.append({
             # --- 명세 필수 항목 5개 ---
             "package": pkg,
             "current_version": installed,
             "recommended_version": recommended,           # 고친 버전이 하나도 없으면 null
             "fixed_count": len(g["cves"]),                # 올리면 해결되는 취약점 수
-            "max_severity": min(g["severities"], key=SEVERITY_ORDER.get),
-            # --- 내가 추가한 항목 ---
+            "max_severity": min(g["severities"], key=SEVERITY_ORDER.get),   # 해결 안 되는 것 포함
+            # --- 추가 항목 ---
             "file": file,
-            "cves": sorted(g["cves"]),                    # 기령이가 finding이랑 연결할 때 사용
+            "cves": sorted(g["cves"]),                    # 올리면 해결되는 CVE
             "unfixed_count": len(g["unfixed"]),
+            "unfixed_cves": [cve for cve, _ in unfixed],  # 올려도 남는 CVE (위험도 높은 순)
             "major_upgrade": bool(recommended) and _is_major_upgrade(installed, recommended),
-            "summary": (f"{pkg}을(를) {recommended} 버전으로 올리면 {len(g['cves'])}개 해결"
-                        if recommended else f"{pkg}: 아직 고쳐진 버전이 없음"),
+            "prerelease": prerelease,                     # 추천 버전이 rc·beta 같은 출시 전 버전
+            "summary": _upgrade_summary(pkg, recommended, len(g["cves"]), unfixed, prerelease),
         })
     # 위험도 높은 순 -> 해결 수 많은 순 -> 패키지 이름 순
     upgrades.sort(key=lambda u: (SEVERITY_ORDER[u["max_severity"]], -u["fixed_count"], u["package"]))
