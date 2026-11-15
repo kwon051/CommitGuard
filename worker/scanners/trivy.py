@@ -64,9 +64,39 @@ def make_fingerprint(cve: str, pkg: str, file: str) -> str:
     return f"trivy:{cve}:{pkg}:{file}"
 
 
-def _version_key(version: str) -> tuple[int, ...]:
-    """'2.10.1' -> (2, 10, 1). 문자열 비교로는 '2.10' < '2.9'가 되어서 숫자로 바꾼다."""
-    return tuple(int(n) for n in re.findall(r"\d+", version))
+# 같은 숫자 버전 안에서의 순서: dev < alpha < beta < rc < 정식 < post
+# 예) 1.2.0.dev1 < 1.2.0a1 < 1.2.0b1 < 1.2.0rc1 < 1.2.0 < 1.2.0.post1
+_PRE_STAGE = {"dev": 0, "alpha": 1, "a": 1, "beta": 2, "b": 2,
+              "preview": 3, "pre": 3, "rc": 3, "c": 3}
+_FINAL_STAGE = 4
+_POST_STAGE = 5
+# alpha가 a보다, preview가 pre보다 먼저 와야 긴 이름이 통째로 잡힌다
+_STAGE_RE = re.compile(r"[.-]?(dev|alpha|beta|preview|pre|rc|post|a|b|c)[.-]?(\d*)")
+
+
+def _version_key(version: str) -> tuple[tuple[int, ...], int, int]:
+    """버전 문자열을 비교용 값으로 바꾼다.
+
+    '2.10'      -> ((2, 10), 4, 0)     문자열 비교로는 '2.10' < '2.9'가 되어서 숫자로 바꾼다
+    '1.2.0rc1'  -> ((1, 2), 3, 1)      출시 후보(rc)는 정식 1.2.0보다 낮다
+    '1.2.0-rc.1'-> ((1, 2), 3, 1)      npm 형식도 같은 값
+    '1.2.0'     -> ((1, 2), 4, 0)
+    끝의 0은 지운다: '2.0'과 '2.0.0'은 같은 버전이다.
+    """
+    v = version.strip().lower().lstrip("v")
+    m = re.match(r"(\d+(?:\.\d+)*)(.*)", v)
+    if not m:
+        return ((), _FINAL_STAGE, 0)
+    release = tuple(int(n) for n in m.group(1).split("."))
+    while len(release) > 1 and release[-1] == 0:
+        release = release[:-1]
+
+    # 숫자 바로 뒤에 붙은 rc1, -beta.2, .post1 등만 본다 ('+cpu' 같은 꼬리표의 c를 rc로 오해하지 않게)
+    tag = _STAGE_RE.match(m.group(2))
+    if not tag:
+        return (release, _FINAL_STAGE, 0)
+    stage = _POST_STAGE if tag.group(1) == "post" else _PRE_STAGE[tag.group(1)]
+    return (release, stage, int(tag.group(2) or 0))
 
 
 def pick_fixed_version(fixed: str) -> str | None:
@@ -126,6 +156,99 @@ def to_findings(raw: dict[str, Any]) -> list[dict[str, Any]]:
     return findings
 
 
+def _is_major_upgrade(current: str, recommended: str) -> bool:
+    """첫 번째 숫자(메이저 버전)가 바뀌면 True. 예: 0.12.2 -> 3.1.3
+    메이저가 바뀌면 사용법이 달라져 코드가 깨질 수 있어서 따로 표시"""
+    cur, rec = _version_key(current)[0], _version_key(recommended)[0]
+    return bool(cur and rec) and cur[0] != rec[0]
+
+
+UNFIXED_SHOW_MAX = 3   # 요약 문장에 남는 CVE를 몇 개까지 이름으로 보여줄지
+
+
+def _upgrade_summary(pkg: str, recommended: str | None, fixed: int,
+                     unfixed: list[tuple[str, str]], prerelease: bool) -> str:
+    """화면에 바로 쓸 한 줄 요약.
+
+    올려도 남는 취약점이 있으면 무엇인지(CVE와 위험도)까지 같이 적는다.
+    안 그러면 '올리면 해결'만 보고 전부 안전해진 줄 안다.
+    unfixed: [(CVE, 위험도), ...] 위험도 높은 순으로 정렬된 목록
+    """
+    left = ""
+    if unfixed:
+        names = ", ".join(f"{cve}({sev})" for cve, sev in unfixed[:UNFIXED_SHOW_MAX])
+        more = f" 외 {len(unfixed) - UNFIXED_SHOW_MAX}개" if len(unfixed) > UNFIXED_SHOW_MAX else ""
+        left = f"{names}{more}"
+
+    if not recommended:
+        return f"{pkg}: 아직 고쳐진 버전이 없음 - {left}"
+    text = f"{pkg}을(를) {recommended} 버전으로 올리면 {fixed}개 해결"
+    if prerelease:
+        text += " (출시 전 버전이라 정식 버전이 나오면 그 버전 권장)"
+    if unfixed:
+        text += f", 고쳐진 버전이 없는 {len(unfixed)}개는 남음 - {left}"
+    return text
+
+
+def summarize_upgrades(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """같은 패키지의 취약점을 묶어 'X를 Y 버전으로 올리면 N개 해결' 목록을 만든다.
+
+    묶는 기준: (파일, 패키지명, 현재 버전)
+    추천 버전: 묶인 취약점들의 고친 버전 중 가장 높은 것 (그래야 전부 해결된다)
+    고쳐진 버전이 없는 취약점은 해결 수에서 빼고 unfixed_count로 따로 센다.
+    """
+    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for result in raw.get("Results") or []:
+        file = result.get("Target", "")
+        for vuln in result.get("Vulnerabilities") or []:
+            pkg = vuln.get("PkgName", "unknown")
+            installed = vuln.get("InstalledVersion", "")
+            g = groups.setdefault((file, pkg, installed), {
+                "fixed": [],          # 고친 버전 목록
+                "cves": [],           # 고친 버전이 있는 CVE (중복 제거용)
+                "unfixed": {},        # 고친 버전이 없는 CVE -> 위험도
+                "severities": [],
+            })
+            cve = vuln.get("VulnerabilityID", "unknown")
+            if cve in g["cves"] or cve in g["unfixed"]:
+                continue              # 같은 CVE가 두 번 나오면 한 번만 센다
+            sev = vuln.get("Severity", "UNKNOWN").upper()
+            sev = sev if sev in SEVERITY_ORDER else "UNKNOWN"
+            g["severities"].append(sev)
+            fixed = pick_fixed_version(vuln.get("FixedVersion", ""))
+            if fixed:
+                g["fixed"].append(fixed)
+                g["cves"].append(cve)
+            else:
+                g["unfixed"][cve] = sev
+
+    upgrades = []
+    for (file, pkg, installed), g in groups.items():
+        recommended = max(g["fixed"], key=_version_key) if g["fixed"] else None
+        prerelease = bool(recommended) and _version_key(recommended)[1] < _FINAL_STAGE
+        # 남는 CVE를 위험도 높은 순으로 (같으면 CVE 번호 순)
+        unfixed = sorted(g["unfixed"].items(), key=lambda kv: (SEVERITY_ORDER[kv[1]], kv[0]))
+        upgrades.append({
+            # --- 명세 필수 항목 5개 ---
+            "package": pkg,
+            "current_version": installed,
+            "recommended_version": recommended,           # 고친 버전이 하나도 없으면 null
+            "fixed_count": len(g["cves"]),                # 올리면 해결되는 취약점 수
+            "max_severity": min(g["severities"], key=SEVERITY_ORDER.get),   # 해결 안 되는 것 포함
+            # --- 추가 항목 ---
+            "file": file,
+            "cves": sorted(g["cves"]),                    # 올리면 해결되는 CVE
+            "unfixed_count": len(g["unfixed"]),
+            "unfixed_cves": [cve for cve, _ in unfixed],  # 올려도 남는 CVE (위험도 높은 순)
+            "major_upgrade": bool(recommended) and _is_major_upgrade(installed, recommended),
+            "prerelease": prerelease,                     # 추천 버전이 rc·beta 같은 출시 전 버전
+            "summary": _upgrade_summary(pkg, recommended, len(g["cves"]), unfixed, prerelease),
+        })
+    # 위험도 높은 순 -> 해결 수 많은 순 -> 패키지 이름 순
+    upgrades.sort(key=lambda u: (SEVERITY_ORDER[u["max_severity"]], -u["fixed_count"], u["package"]))
+    return upgrades
+
+
 def scan(repo_path: str | Path) -> list[dict[str, Any]]:
     """worker가 호출하는 진입점: 저장소 경로 -> 공통 형식 목록."""
     return to_findings(run_trivy(repo_path))
@@ -137,6 +260,7 @@ def _main() -> None:
     p.add_argument("--from-raw", help="Trivy 없이 기존 원본 JSON을 변환")
     p.add_argument("--raw", help="원본 JSON 저장 경로")
     p.add_argument("--out", help="공통 형식 JSON 저장 경로 (생략하면 화면에 출력)")
+    p.add_argument("--upgrades", help="업그레이드 정리 JSON 저장 경로")
     args = p.parse_args()
 
     if args.from_raw:
@@ -156,6 +280,13 @@ def _main() -> None:
         print(text, end="")
     total = sum(len(r.get("Vulnerabilities") or []) for r in raw.get("Results") or [])
     print(f"[trivy] 원본 {total}건 -> 공통 형식 {len(findings)}건", file=sys.stderr)
+
+    # 업그레이드 정리 결과 저장
+    if args.upgrades:
+        upgrades = summarize_upgrades(raw)
+        Path(args.upgrades).write_text(json.dumps(upgrades, ensure_ascii=False, indent=2) + "\n",
+                                       encoding="utf-8")
+        print(f"[trivy] 업그레이드 정리 {len(upgrades)}개 패키지", file=sys.stderr)
 
 
 if __name__ == "__main__":

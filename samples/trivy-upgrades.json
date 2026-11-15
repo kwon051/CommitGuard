@@ -1,0 +1,107 @@
+[
+  {
+    "package": "pyyaml",
+    "current_version": "5.3",
+    "recommended_version": "5.4",
+    "fixed_count": 2,
+    "max_severity": "CRITICAL",
+    "file": "requirements.txt",
+    "cves": [
+      "CVE-2020-14343",
+      "CVE-2020-1747"
+    ],
+    "unfixed_count": 0,
+    "unfixed_cves": [],
+    "major_upgrade": false,
+    "prerelease": false,
+    "summary": "pyyaml을(를) 5.4 버전으로 올리면 2개 해결"
+  },
+  {
+    "package": "urllib3",
+    "current_version": "1.24.1",
+    "recommended_version": "2.8.0",
+    "fixed_count": 13,
+    "max_severity": "HIGH",
+    "file": "requirements.txt",
+    "cves": [
+      "CVE-2018-25091",
+      "CVE-2019-11236",
+      "CVE-2019-11324",
+      "CVE-2020-26137",
+      "CVE-2023-43804",
+      "CVE-2023-45803",
+      "CVE-2024-37891",
+      "CVE-2025-50181",
+      "CVE-2025-66418",
+      "CVE-2025-66471",
+      "CVE-2026-21441",
+      "CVE-2026-44431",
+      "CVE-2026-97689"
+    ],
+    "unfixed_count": 0,
+    "unfixed_cves": [],
+    "major_upgrade": true,
+    "prerelease": false,
+    "summary": "urllib3을(를) 2.8.0 버전으로 올리면 13개 해결"
+  },
+  {
+    "package": "jinja2",
+    "current_version": "2.10",
+    "recommended_version": "3.1.6",
+    "fixed_count": 6,
+    "max_severity": "HIGH",
+    "file": "requirements.txt",
+    "cves": [
+      "CVE-2019-10906",
+      "CVE-2020-28493",
+      "CVE-2024-22195",
+      "CVE-2024-34064",
+      "CVE-2024-56326",
+      "CVE-2025-27516"
+    ],
+    "unfixed_count": 0,
+    "unfixed_cves": [],
+    "major_upgrade": true,
+    "prerelease": false,
+    "summary": "jinja2을(를) 3.1.6 버전으로 올리면 6개 해결"
+  },
+  {
+    "package": "requests",
+    "current_version": "2.19.0",
+    "recommended_version": "2.33.0",
+    "fixed_count": 5,
+    "max_severity": "HIGH",
+    "file": "requirements.txt",
+    "cves": [
+      "CVE-2018-18074",
+      "CVE-2023-32681",
+      "CVE-2024-35195",
+      "CVE-2024-47081",
+      "CVE-2026-25645"
+    ],
+    "unfixed_count": 0,
+    "unfixed_cves": [],
+    "major_upgrade": false,
+    "prerelease": false,
+    "summary": "requests을(를) 2.33.0 버전으로 올리면 5개 해결"
+  },
+  {
+    "package": "flask",
+    "current_version": "0.12.2",
+    "recommended_version": "3.1.3",
+    "fixed_count": 4,
+    "max_severity": "HIGH",
+    "file": "requirements.txt",
+    "cves": [
+      "CVE-2018-1000656",
+      "CVE-2019-1010083",
+      "CVE-2023-30861",
+      "CVE-2026-27205"
+    ],
+    "unfixed_count": 0,
+    "unfixed_cves": [],
+    "major_upgrade": true,
+    "prerelease": false,
+    "summary": "flask을(를) 3.1.3 버전으로 올리면 4개 해결"
+  }
+]
