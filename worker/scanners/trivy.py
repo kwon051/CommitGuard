@@ -155,11 +155,13 @@ def to_findings(raw: dict[str, Any]) -> list[dict[str, Any]]:
     findings.sort(key=lambda f: (SEVERITY_ORDER.get(f["severity"], 9), f["file"], f["rule_id"]))
     return findings
 
+
 def _is_major_upgrade(current: str, recommended: str) -> bool:
     """첫 번째 숫자(메이저 버전)가 바뀌면 True. 예: 0.12.2 -> 3.1.3
     메이저가 바뀌면 사용법이 달라져 코드가 깨질 수 있어서 따로 표시"""
     cur, rec = _version_key(current)[0], _version_key(recommended)[0]
     return bool(cur and rec) and cur[0] != rec[0]
+
 
 UNFIXED_SHOW_MAX = 3   # 요약 문장에 남는 CVE를 몇 개까지 이름으로 보여줄지
 
@@ -186,6 +188,7 @@ def _upgrade_summary(pkg: str, recommended: str | None, fixed: int,
     if unfixed:
         text += f", 고쳐진 버전이 없는 {len(unfixed)}개는 남음 - {left}"
     return text
+
 
 def summarize_upgrades(raw: dict[str, Any]) -> list[dict[str, Any]]:
     """같은 패키지의 취약점을 묶어 'X를 Y 버전으로 올리면 N개 해결' 목록을 만든다.
@@ -245,6 +248,7 @@ def summarize_upgrades(raw: dict[str, Any]) -> list[dict[str, Any]]:
     upgrades.sort(key=lambda u: (SEVERITY_ORDER[u["max_severity"]], -u["fixed_count"], u["package"]))
     return upgrades
 
+
 def scan(repo_path: str | Path) -> list[dict[str, Any]]:
     """worker가 호출하는 진입점: 저장소 경로 -> 공통 형식 목록."""
     return to_findings(run_trivy(repo_path))
@@ -256,7 +260,7 @@ def _main() -> None:
     p.add_argument("--from-raw", help="Trivy 없이 기존 원본 JSON을 변환")
     p.add_argument("--raw", help="원본 JSON 저장 경로")
     p.add_argument("--out", help="공통 형식 JSON 저장 경로 (생략하면 화면에 출력)")
-    p.add_argument("--upgrades", help="업그레이드 정리 JSON 저장 경로") 
+    p.add_argument("--upgrades", help="업그레이드 정리 JSON 저장 경로")
     args = p.parse_args()
 
     if args.from_raw:

@@ -111,6 +111,7 @@ def test_empty_results():
     assert trivy.to_findings({"Results": None}) == []
     assert trivy.to_findings({"Results": [{"Target": "go.mod", "Vulnerabilities": None}]}) == []
 
+
 # ---------- 업그레이드 정리 (summarize_upgrades) ----------
 
 UPGRADE_FIELDS = {"package", "current_version", "recommended_version", "fixed_count", "max_severity",
@@ -171,6 +172,7 @@ def test_upgrades_sorted_by_severity_then_count():
     assert order == sorted(order)
     assert trivy.summarize_upgrades({}) == []
 
+
 def test_prerelease_lower_than_final():
     # 출시 후보(rc)·베타·알파는 같은 숫자의 정식 버전보다 낮다
     assert trivy._version_key("1.2.0rc1") < trivy._version_key("1.2.0")
@@ -200,6 +202,7 @@ def test_upgrade_does_not_recommend_rc_over_final():
     assert u["recommended_version"] == "1.2.0"
     assert u["major_upgrade"] is False      # 1.0 -> 1.2.0
 
+
 def test_upgrade_flags_prerelease_recommendation():
     # 고친 버전이 rc밖에 없으면 추천은 하되, 출시 전 버전이라고 알려 준다
     raw = {"Results": [{"Target": "requirements.txt", "Vulnerabilities": [_vuln("CVE-1", fixed="2.0.0rc1")]}]}
@@ -226,6 +229,7 @@ def test_upgrade_summary_names_remaining_cves():
     assert u["max_severity"] == "CRITICAL"
     assert u["summary"] == ("foo을(를) 1.1 버전으로 올리면 1개 해결, 고쳐진 버전이 없는 5개는 남음 - "
                             "CVE-8(CRITICAL), CVE-5(HIGH), CVE-6(HIGH) 외 2개")
+
 
 def test_not_a_directory(tmp_path):
     with pytest.raises(trivy.TrivyError):
