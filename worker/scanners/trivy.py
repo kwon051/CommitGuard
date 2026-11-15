@@ -125,6 +125,64 @@ def to_findings(raw: dict[str, Any]) -> list[dict[str, Any]]:
     findings.sort(key=lambda f: (SEVERITY_ORDER.get(f["severity"], 9), f["file"], f["rule_id"]))
     return findings
 
+def _is_major_upgrade(current: str, recommended: str) -> bool:
+    """첫 번째 숫자(메이저 버전)가 바뀌면 True. 예: 0.12.2 -> 3.1.3
+    메이저가 바뀌면 사용법이 달라져 코드가 깨질 수 있어서 따로 표시"""
+    cur, rec = _version_key(current), _version_key(recommended)
+    return bool(cur and rec) and cur[0] != rec[0]
+
+def summarize_upgrades(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """같은 패키지의 취약점을 묶어 'X를 Y 버전으로 올리면 N개 해결' 목록을 만든다.
+
+    묶는 기준: (파일, 패키지명, 현재 버전)
+    추천 버전: 묶인 취약점들의 고친 버전 중 가장 높은 것 (그래야 전부 해결된다)
+    고쳐진 버전이 없는 취약점은 해결 수에서 빼고 unfixed_count로 따로 센다.
+    """
+    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for result in raw.get("Results") or []:
+        file = result.get("Target", "")
+        for vuln in result.get("Vulnerabilities") or []:
+            pkg = vuln.get("PkgName", "unknown")
+            installed = vuln.get("InstalledVersion", "")
+            g = groups.setdefault((file, pkg, installed), {
+                "fixed": [],          # 고친 버전 목록
+                "cves": [],           # 고친 버전이 있는 CVE
+                "unfixed": [],        # 고친 버전이 없는 CVE
+                "severities": [],
+            })
+            cve = vuln.get("VulnerabilityID", "unknown")
+            if cve in g["cves"] or cve in g["unfixed"]:
+                continue              # 같은 CVE가 두 번 나오면 한 번만 센다
+            sev = vuln.get("Severity", "UNKNOWN").upper()
+            g["severities"].append(sev if sev in SEVERITY_ORDER else "UNKNOWN")
+            fixed = pick_fixed_version(vuln.get("FixedVersion", ""))
+            if fixed:
+                g["fixed"].append(fixed)
+                g["cves"].append(cve)
+            else:
+                g["unfixed"].append(cve)
+
+    upgrades = []
+    for (file, pkg, installed), g in groups.items():
+        recommended = max(g["fixed"], key=_version_key) if g["fixed"] else None
+        upgrades.append({
+            # --- 명세 필수 항목 5개 ---
+            "package": pkg,
+            "current_version": installed,
+            "recommended_version": recommended,           # 고친 버전이 하나도 없으면 null
+            "fixed_count": len(g["cves"]),                # 올리면 해결되는 취약점 수
+            "max_severity": min(g["severities"], key=SEVERITY_ORDER.get),
+            # --- 내가 추가한 항목 ---
+            "file": file,
+            "cves": sorted(g["cves"]),                    # 기령이가 finding이랑 연결할 때 사용
+            "unfixed_count": len(g["unfixed"]),
+            "major_upgrade": bool(recommended) and _is_major_upgrade(installed, recommended),
+            "summary": (f"{pkg}을(를) {recommended} 버전으로 올리면 {len(g['cves'])}개 해결"
+                        if recommended else f"{pkg}: 아직 고쳐진 버전이 없음"),
+        })
+    # 위험도 높은 순 -> 해결 수 많은 순 -> 패키지 이름 순
+    upgrades.sort(key=lambda u: (SEVERITY_ORDER[u["max_severity"]], -u["fixed_count"], u["package"]))
+    return upgrades
 
 def scan(repo_path: str | Path) -> list[dict[str, Any]]:
     """worker가 호출하는 진입점: 저장소 경로 -> 공통 형식 목록."""
@@ -137,6 +195,7 @@ def _main() -> None:
     p.add_argument("--from-raw", help="Trivy 없이 기존 원본 JSON을 변환")
     p.add_argument("--raw", help="원본 JSON 저장 경로")
     p.add_argument("--out", help="공통 형식 JSON 저장 경로 (생략하면 화면에 출력)")
+    p.add_argument("--upgrades", help="업그레이드 정리 JSON 저장 경로") 
     args = p.parse_args()
 
     if args.from_raw:
@@ -156,6 +215,13 @@ def _main() -> None:
         print(text, end="")
     total = sum(len(r.get("Vulnerabilities") or []) for r in raw.get("Results") or [])
     print(f"[trivy] 원본 {total}건 -> 공통 형식 {len(findings)}건", file=sys.stderr)
+
+    # 업그레이드 정리 결과 저장
+    if args.upgrades:
+        upgrades = summarize_upgrades(raw)
+        Path(args.upgrades).write_text(json.dumps(upgrades, ensure_ascii=False, indent=2) + "\n",
+                                       encoding="utf-8")
+        print(f"[trivy] 업그레이드 정리 {len(upgrades)}개 패키지", file=sys.stderr)
 
 
 if __name__ == "__main__":
