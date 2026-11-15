@@ -31,30 +31,30 @@ Gitleaks **8.30.1**로 원래의 규칙별 탐지 대상 5개·비탐지 대상 
 추가한 경계 예시 12개도 통과했다. 2월 31일·4월 31일·평년의 2월 29일을 제외하고, 1900/2000년의 윤년 차이를 구분한다. 과도한 allowlist로 제외되던 번호, 구분자 없는 학번 변수 이름, NCP Access/Secret 키도 확인한다.
 
 - allowlist 세 종류는 예외를 제거하면 잡히고 적용하면 제외됨을 테스트한다.
-- 기본 AWS 규칙도 계속 탐지한다. 기존 샘플의 finding 6건과 fingerprint가 유지된다.
+- 기본 규칙도 계속 탐지한다. 기존 샘플의 finding 6건과 fingerprint를 유지하면서 국내 규칙 20건을 같은 결과에 추가했다.
 - worker의 실제 Git 검사에서 개인정보 마스킹과 원본 `Fingerprint` 보존을 확인한다.
 - 검사 대상에 별도 `.gitleaks.toml`이 있어도 기본 호출은 worker 설정을 사용한다. 명시적인 `config_path`/`--config` 지정도 유지한다.
-- 전체 테스트: **102 passed, 1 skipped, 3 subtests passed**. 건너뛴 항목은 로컬 Trivy 실행 파일이 필요한 기존 Trivy 통합 테스트다. Gitleaks 통합 테스트는 실행했다.
+- 전체 테스트: **103 passed, 1 skipped, 3 subtests passed**. 건너뛴 항목은 로컬 Trivy 실행 파일이 필요한 기존 Trivy 통합 테스트다. Gitleaks 통합 테스트는 실행했다.
 - worker Docker 이미지 빌드 성공. 컨테이너의 `/app/gitleaks.toml`로 국내 규칙 4종의 실제 Git 검사·변환·마스킹·fingerprint 보존을 확인했다.
 - 현재 파일을 `gitleaks dir`로 검사한 결과 0건. 이는 과거 Git 이력까지 0건이라는 의미는 아니다.
 
 ## 공유용 결과 파일
 
-기본 예시 40개(탐지 대상 20개, 비탐지 대상 20개)를 검사한 결과를 저장소에 보관한다.
+기존 기본 규칙 샘플에 국내 규칙 예시 40개(탐지 대상 20개, 비탐지 대상 20개)를 추가한 Git 저장소를 만들고, 전체 Git 이력을 한 번 검사한 결과를 저장소에 보관한다. 국내 규칙 전용 JSON을 따로 만들지 않는다.
 
 | 파일 | 내용 |
 | --- | --- |
-| `samples/gitleaks-kr-raw.json` | 비밀값을 가린 Gitleaks 원본 21건. 동일 fingerprint의 중복 1건 포함 |
-| `samples/gitleaks-kr-findings.json` | 공통 형식으로 변환하고 중복을 합친 20건. 국내 규칙별 5건 |
+| `samples/gitleaks-raw.json` | 비밀값을 가린 원본 27건: 기본 규칙 6건 + 국내 규칙 21건. 동일 fingerprint의 중복 1건 포함 |
+| `samples/gitleaks-findings.json` | 공통 형식 26건: 기본 규칙 6건 + 국내 규칙별 5건씩 20건. fingerprint 기준 중복 제거 |
 
-비탐지 예시에는 탐지 결과가 없으므로 JSON에 항목이 생기지 않는다. 두 파일은 기본 예시 40개에 대한 결과이며, 추가 경계·allowlist 테스트의 임시 결과는 포함하지 않는다.
+비탐지 예시에는 탐지 결과가 없으므로 JSON에 항목이 생기지 않는다. 추가 경계·allowlist 테스트의 임시 결과는 포함하지 않는다. 원본과 공통 형식은 구조가 달라 두 파일로 유지한다. 현재 결과 화면도 이 공통 형식 파일을 읽으므로 기본·국내 규칙을 함께 보여 준다.
 
-`gitleaks dir`로 검사한 결과라 `File`은 생성된 예시 파일의 상대 경로이고 Git 커밋 정보는 비어 있다. `Fingerprint`는 이 디렉터리 검사에서 Gitleaks가 생성한 값을 그대로 유지한다. 예시 파일은 `tests/test_rules.py`의 `CASES`에서 재생성한다. 개인정보의 식별 숫자는 전부 가리고 API 키는 기존 공통 형식처럼 앞 최대 4자리만 남긴다.
+`gitleaks git`으로 검사한 결과라 `File`은 저장소 안의 상대 경로이며 `Commit`·`Author`·`Date`를 포함한다. `Fingerprint`는 Gitleaks가 생성한 값을 그대로 유지한다. 기존 5개 커밋 뒤에 국내 예시를 넣은 커밋을 추가하므로 기존 기본 규칙의 fingerprint도 유지된다. 기본 예시는 `scripts/make_sample_repo.py`, 국내 예시는 `tests/test_rules.py`의 `CASES`에서 재생성한다. 개인정보의 식별 숫자는 전부 가리고 API 키는 기존 공통 형식처럼 앞 최대 4자리만 남긴다.
 
 저장소 루트에서 다음 명령으로 공유용 결과를 재생성한다.
 
 ```bash
-REQUIRE_GITLEAKS=1 python -m pytest tests/test_rules.py -v --kr-report-dir samples
+REQUIRE_GITLEAKS=1 python -m pytest tests/test_rules.py -v --gitleaks-report-dir samples
 ```
 
 옵션을 생략하면 테스트는 임시 폴더만 사용한다.

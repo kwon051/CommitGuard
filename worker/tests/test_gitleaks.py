@@ -21,7 +21,7 @@ from scanners import gitleaks  # noqa: E402
 
 RAW = json.loads((ROOT / "samples" / "gitleaks-raw.json").read_text(encoding="utf-8"))
 FIELDS = {"tool", "rule_id", "fingerprint", "severity", "file", "line", "title", "why", "fix", "status"}
-EXPECTED = {
+BASE_EXPECTED = {
     ("aws-access-token", "config/settings.py"),
     ("generic-api-key", "config/settings.py"),
     ("generic-api-key", ".env"),
@@ -29,11 +29,16 @@ EXPECTED = {
     ("slack-bot-token", "notify/slack.py"),
     ("private-key", "deploy/id_rsa"),
 }
+EXPECTED = BASE_EXPECTED | {
+    (rule, f"kr/{rule}_hit_{i}.txt")
+    for rule in ("kr-rrn", "kr-mobile", "kr-student-id", "kr-service-api-key")
+    for i in range(1, 6)
+}
 
 
 def test_findings_follow_format_v1():
     findings = gitleaks.to_findings(RAW)
-    assert len(findings) == 6
+    assert len(findings) == 26
     for f in findings:
         assert set(f) == FIELDS
         assert f["tool"] == "gitleaks"
@@ -46,6 +51,11 @@ def test_findings_follow_format_v1():
 def test_expected_rules_and_files():
     findings = gitleaks.to_findings(RAW)
     assert {(f["rule_id"], f["file"]) for f in findings} == EXPECTED
+
+
+def test_shared_findings_match_raw_sample():
+    saved = json.loads((ROOT / "samples" / "gitleaks-findings.json").read_text(encoding="utf-8"))
+    assert saved == gitleaks.to_findings(RAW)
 
 
 def test_fingerprint_preserved_from_gitleaks():
@@ -100,12 +110,12 @@ def test_unknown_rule_uses_default():
 
 
 def test_duplicates_merged():
-    assert len(gitleaks.to_findings(RAW + RAW)) == 6
+    assert len(gitleaks.to_findings(RAW + RAW)) == 26
 
 
 def test_same_location_with_distinct_fingerprint_is_preserved():
     another_commit = {**RAW[0], "Fingerprint": "another-commit:.env:github-pat:4"}
-    assert len(gitleaks.to_findings(RAW + [another_commit])) == 7
+    assert len(gitleaks.to_findings(RAW + [another_commit])) == 27
 
 
 @pytest.mark.skipif(shutil.which(gitleaks.GITLEAKS_BIN) is None, reason="gitleaks 미설치")
@@ -113,7 +123,7 @@ def test_scan_sample_repo(tmp_path):
     repo = tmp_path / "leaky-repo"
     subprocess.run([sys.executable, str(ROOT / "scripts" / "make_sample_repo.py"), str(repo)], check=True)
     findings = gitleaks.scan(repo)
-    assert {(f["rule_id"], f["file"]) for f in findings} == EXPECTED
+    assert {(f["rule_id"], f["file"]) for f in findings} == BASE_EXPECTED
     assert all(f["fingerprint"] for f in findings)
     # AWS 문서 예시 키는 오탐으로 잡히면 안 된다
     assert all(f["file"] != "docs/aws-example.md" for f in findings)
