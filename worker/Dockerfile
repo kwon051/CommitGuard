@@ -20,6 +20,7 @@ RUN trivy --version
 
 WORKDIR /app
 COPY scanners/ /app/scanners/
+COPY gitleaks.toml /app/gitleaks.toml
 
 # compose에서는 queue를 지켜보는 worker.py를 실행한다.
 # 검사 모듈만 따로 시험할 때: docker run --entrypoint python <이미지> -m scanners.gitleaks
