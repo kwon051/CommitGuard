@@ -111,6 +111,63 @@ def test_empty_results():
     assert trivy.to_findings({"Results": None}) == []
     assert trivy.to_findings({"Results": [{"Target": "go.mod", "Vulnerabilities": None}]}) == []
 
+# ---------- 업그레이드 정리 (summarize_upgrades) ----------
+
+UPGRADE_FIELDS = {"package", "current_version", "recommended_version", "fixed_count", "max_severity",
+                  "file", "cves", "unfixed_count", "major_upgrade", "summary"}
+
+
+def _vuln(cve, pkg="foo", installed="1.0", fixed="", severity="MEDIUM"):
+    """테스트용 가짜 취약점 1건."""
+    return {"VulnerabilityID": cve, "PkgName": pkg, "InstalledVersion": installed,
+            "FixedVersion": fixed, "Severity": severity}
+
+
+def test_upgrades_grouped_by_package():
+    # 샘플의 취약점 30건이 패키지 5개로 묶이고, 해결 수 합계가 원본 건수와 같음
+    upgrades = trivy.summarize_upgrades(RAW)
+    assert len(upgrades) == len({v["PkgName"] for _, v in _raw_vulns()})
+    assert sum(u["fixed_count"] + u["unfixed_count"] for u in upgrades) == len(trivy.to_findings(RAW))
+    for u in upgrades:
+        assert set(u) == UPGRADE_FIELDS
+
+
+def test_upgrade_recommends_highest_fixed_version():
+    # 고친 버전이 2.0, 2.5, 1.9면 2.5까지 올려야 셋 다 해결
+    raw = {"Results": [{"Target": "requirements.txt", "Vulnerabilities": [
+        _vuln("CVE-1", fixed="2.0", severity="LOW"),
+        _vuln("CVE-2", fixed="2.5, 2.4.9", severity="CRITICAL"),
+        _vuln("CVE-3", fixed="1.9", severity="HIGH"),
+    ]}]}
+    [u] = trivy.summarize_upgrades(raw)
+    assert u["recommended_version"] == "2.5"
+    assert u["fixed_count"] == 3
+    assert u["max_severity"] == "CRITICAL"
+    assert u["major_upgrade"] is True          # 1.0 -> 2.5
+    assert u["summary"] == "foo을(를) 2.5 버전으로 올리면 3개 해결"
+
+
+def test_upgrade_excludes_unfixed():
+    # 고쳐진 버전이 없는 취약점은 해결 수에서 빠지고 unfixed_count로 센다
+    raw = {"Results": [{"Target": "requirements.txt", "Vulnerabilities": [
+        _vuln("CVE-1", fixed="1.2"),
+        _vuln("CVE-2"),
+    ]}]}
+    [u] = trivy.summarize_upgrades(raw)
+    assert (u["fixed_count"], u["unfixed_count"]) == (1, 1)
+    assert u["cves"] == ["CVE-1"]
+
+    # 하나도 안 고쳐졌으면 추천 버전은 None
+    [u] = trivy.summarize_upgrades({"Results": [{"Target": "requirements.txt", "Vulnerabilities": [_vuln("CVE-2")]}]})
+    assert u["recommended_version"] is None
+    assert "고쳐진 버전이 없음" in u["summary"]
+
+
+def test_upgrades_sorted_by_severity_then_count():
+    # 위험도 높은 순 -> 해결 수 많은 순으로 정렬됐는지, 빈 결과면 빈 목록인지
+    order = [(trivy.SEVERITY_ORDER[u["max_severity"]], -u["fixed_count"]) for u in trivy.summarize_upgrades(RAW)]
+    assert order == sorted(order)
+    assert trivy.summarize_upgrades({}) == []
 
 def test_not_a_directory(tmp_path):
     with pytest.raises(trivy.TrivyError):
