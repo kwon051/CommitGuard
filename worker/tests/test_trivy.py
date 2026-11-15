@@ -169,6 +169,35 @@ def test_upgrades_sorted_by_severity_then_count():
     assert order == sorted(order)
     assert trivy.summarize_upgrades({}) == []
 
+def test_prerelease_lower_than_final():
+    # 출시 후보(rc)·베타·알파는 같은 숫자의 정식 버전보다 낮다
+    assert trivy._version_key("1.2.0rc1") < trivy._version_key("1.2.0")
+    assert trivy._version_key("1.2.0-rc.1") < trivy._version_key("1.2.0")       # npm 형식
+    assert (trivy._version_key("1.2.0.dev1") < trivy._version_key("1.2.0a1")
+            < trivy._version_key("1.2.0b1") < trivy._version_key("1.2.0rc1")
+            < trivy._version_key("1.2.0") < trivy._version_key("1.2.0.post1"))
+    assert trivy._version_key("1.2.0rc2") > trivy._version_key("1.2.0rc1")
+    assert trivy._version_key("1.2.1rc1") > trivy._version_key("1.2.0")          # 숫자가 먼저
+    assert trivy._version_key("2.0") == trivy._version_key("2.0.0")
+    assert trivy._version_key("1.2.0+cpu") == trivy._version_key("1.2.0")       # 꼬리표는 정식 버전
+
+
+def test_pick_fixed_version_prefers_final():
+    assert trivy.pick_fixed_version("1.2.0rc1, 1.2.0") == "1.2.0"
+    assert trivy.pick_fixed_version("1.2.0, 1.2.0rc1") == "1.2.0"
+    assert trivy.pick_fixed_version("2.0.0rc1") == "2.0.0rc1"     # rc밖에 없으면 rc
+
+
+def test_upgrade_does_not_recommend_rc_over_final():
+    # 리뷰 피드백: 1.2.0rc1과 1.2.0이 있으면 정식 1.2.0을 추천해야 한다
+    raw = {"Results": [{"Target": "requirements.txt", "Vulnerabilities": [
+        _vuln("CVE-1", fixed="1.2.0rc1"),
+        _vuln("CVE-2", fixed="1.2.0"),
+    ]}]}
+    [u] = trivy.summarize_upgrades(raw)
+    assert u["recommended_version"] == "1.2.0"
+    assert u["major_upgrade"] is False      # 1.0 -> 1.2.0
+
 def test_not_a_directory(tmp_path):
     with pytest.raises(trivy.TrivyError):
         trivy.run_trivy(tmp_path / "없는폴더")

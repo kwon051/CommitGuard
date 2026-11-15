@@ -64,9 +64,39 @@ def make_fingerprint(cve: str, pkg: str, file: str) -> str:
     return f"trivy:{cve}:{pkg}:{file}"
 
 
-def _version_key(version: str) -> tuple[int, ...]:
-    """'2.10.1' -> (2, 10, 1). 문자열 비교로는 '2.10' < '2.9'가 되어서 숫자로 바꾼다."""
-    return tuple(int(n) for n in re.findall(r"\d+", version))
+# 같은 숫자 버전 안에서의 순서: dev < alpha < beta < rc < 정식 < post
+# 예) 1.2.0.dev1 < 1.2.0a1 < 1.2.0b1 < 1.2.0rc1 < 1.2.0 < 1.2.0.post1
+_PRE_STAGE = {"dev": 0, "alpha": 1, "a": 1, "beta": 2, "b": 2,
+              "preview": 3, "pre": 3, "rc": 3, "c": 3}
+_FINAL_STAGE = 4
+_POST_STAGE = 5
+# alpha가 a보다, preview가 pre보다 먼저 와야 긴 이름이 통째로 잡힌다
+_STAGE_RE = re.compile(r"[.-]?(dev|alpha|beta|preview|pre|rc|post|a|b|c)[.-]?(\d*)")
+
+
+def _version_key(version: str) -> tuple[tuple[int, ...], int, int]:
+    """버전 문자열을 비교용 값으로 바꾼다.
+
+    '2.10'      -> ((2, 10), 4, 0)     문자열 비교로는 '2.10' < '2.9'가 되어서 숫자로 바꾼다
+    '1.2.0rc1'  -> ((1, 2), 3, 1)      출시 후보(rc)는 정식 1.2.0보다 낮다
+    '1.2.0-rc.1'-> ((1, 2), 3, 1)      npm 형식도 같은 값
+    '1.2.0'     -> ((1, 2), 4, 0)
+    끝의 0은 지운다: '2.0'과 '2.0.0'은 같은 버전이다.
+    """
+    v = version.strip().lower().lstrip("v")
+    m = re.match(r"(\d+(?:\.\d+)*)(.*)", v)
+    if not m:
+        return ((), _FINAL_STAGE, 0)
+    release = tuple(int(n) for n in m.group(1).split("."))
+    while len(release) > 1 and release[-1] == 0:
+        release = release[:-1]
+
+    # 숫자 바로 뒤에 붙은 rc1, -beta.2, .post1 등만 본다 ('+cpu' 같은 꼬리표의 c를 rc로 오해하지 않게)
+    tag = _STAGE_RE.match(m.group(2))
+    if not tag:
+        return (release, _FINAL_STAGE, 0)
+    stage = _POST_STAGE if tag.group(1) == "post" else _PRE_STAGE[tag.group(1)]
+    return (release, stage, int(tag.group(2) or 0))
 
 
 def pick_fixed_version(fixed: str) -> str | None:
@@ -128,7 +158,7 @@ def to_findings(raw: dict[str, Any]) -> list[dict[str, Any]]:
 def _is_major_upgrade(current: str, recommended: str) -> bool:
     """첫 번째 숫자(메이저 버전)가 바뀌면 True. 예: 0.12.2 -> 3.1.3
     메이저가 바뀌면 사용법이 달라져 코드가 깨질 수 있어서 따로 표시"""
-    cur, rec = _version_key(current), _version_key(recommended)
+    cur, rec = _version_key(current)[0], _version_key(recommended)[0]
     return bool(cur and rec) and cur[0] != rec[0]
 
 def summarize_upgrades(raw: dict[str, Any]) -> list[dict[str, Any]]:
