@@ -25,12 +25,13 @@ from pathlib import Path
 from typing import Any
 
 GITLEAKS_BIN = os.environ.get("GITLEAKS_BIN", "gitleaks")
+DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "gitleaks.toml"
 REDACT_PERCENT = 80          # Gitleaks가 키의 앞 20%만 남기고 가린다
 MASK_VISIBLE = 4             # 공통 형식: 앞 4자리만 남긴다
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
 # 규칙별 한국어 안내. rule_id는 Gitleaks 기본 규칙 이름 그대로 쓴다.
-# (한국형 규칙은 11/15 작업에서 이 표에 추가한다)
+# 국내 규칙은 worker/gitleaks.toml에 정의한다.
 _REVOKE_GENERIC = "1) 발급한 곳에서 키 폐기 2) 새 키를 발급해 .env에 저장 3) Git 기록에서 삭제"
 RULES: dict[str, dict[str, str]] = {
     "aws-access-token": {
@@ -135,6 +136,30 @@ RULES: dict[str, dict[str, str]] = {
         "why": "비밀번호나 키로 보이는 값이 코드에 그대로 적혀 있어, 저장소를 보는 사람 누구나 쓸 수 있습니다.",
         "fix": "1) 해당 비밀번호·키 변경 2) 코드 대신 .env에 저장하고 os.environ으로 읽기 3) Git 기록에서 삭제",
     },
+    "kr-rrn": {
+        "severity": "CRITICAL",
+        "title": "주민등록번호 노출",
+        "why": "주민등록번호가 공개되면 개인 식별이나 명의 도용에 악용될 수 있습니다.",
+        "fix": "1) 실제 번호라면 즉시 삭제하고 당사자에게 알리기 2) 테스트에는 '******-*******'처럼 가린 값 사용 3) Git 기록에서 삭제",
+    },
+    "kr-mobile": {
+        "severity": "HIGH",
+        "title": "휴대폰 번호 노출",
+        "why": "저장소를 보는 사람 누구나 이 번호로 연락하거나 스팸·피싱에 쓸 수 있습니다.",
+        "fix": "1) 실제 번호라면 삭제 2) 테스트에는 010-0000-0000 같은 가짜 번호 사용 3) Git 기록에서 삭제",
+    },
+    "kr-student-id": {
+        "severity": "MEDIUM",
+        "title": "학번 노출",
+        "why": "학번은 이름·학과와 함께 쓰이면 특정 학생을 식별할 수 있는 정보입니다.",
+        "fix": "1) 실제 학번이라면 삭제 2) 테스트에는 2000XXXX 같은 가짜 값 사용 3) Git 기록에서 삭제",
+    },
+    "kr-service-api-key": {
+        "severity": "HIGH",
+        "title": "국내 서비스 API 키 노출",
+        "why": "카카오·네이버·공공데이터포털 같은 국내 서비스 키입니다. 다른 사람이 이 키로 지도·검색·공공데이터 API를 호출해 할당량을 소진하거나 요금이 청구될 수 있습니다.",
+        "fix": "1) 카카오 개발자센터·네이버 개발자센터·공공데이터포털에서 키 재발급 2) 새 키를 .env에 저장 3) Git 기록에서 삭제",
+    },
 }
 
 DEFAULT_RULE = {
@@ -170,8 +195,11 @@ def run_gitleaks(repo_path: str | Path, config_path: str | Path | None = None,
             "--exit-code", "0",          # 누출이 있어도 0, 실행 오류만 0이 아님
             "--log-level", "error",
         ]
-        if config_path:
-            cmd += ["--config", str(config_path)]
+        # 검사 대상 저장소의 설정이 worker 규칙을 대체하지 않도록 명시한다.
+        config = Path(config_path) if config_path is not None else DEFAULT_CONFIG
+        if not config.is_file():
+            raise GitleaksError(f"Gitleaks 설정 파일이 없습니다: {config}")
+        cmd += ["--config", str(config.resolve())]
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except FileNotFoundError as e:
@@ -185,10 +213,15 @@ def run_gitleaks(repo_path: str | Path, config_path: str | Path | None = None,
     return sanitize_raw(raw)
 
 
+PII_MASK = {"kr-rrn": "******-*******", "kr-mobile": "010-****-****", "kr-student-id": "20******"}
+
+
 def mask_secret(secret: str, rule_id: str) -> str:
-    """공통 형식 규칙: 앞 4자리만 남기고 가린다. 개인 키는 전부 가린다."""
+    """공통 형식 규칙: 앞 4자리만 남기고 가린다. 개인 키와 국내 개인정보는 식별 숫자를 남기지 않는다."""
     if rule_id == "private-key" or "PRIVATE KEY" in secret:
         return "****"
+    if rule_id in PII_MASK:
+        return PII_MASK[rule_id]
     visible = secret.split("...")[0][:MASK_VISIBLE]   # Gitleaks 가림 표시(...) 제거
     return f"{visible}****"
 

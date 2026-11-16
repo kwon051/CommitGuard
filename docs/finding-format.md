@@ -16,6 +16,7 @@ Gitleaks·Trivy 결과를 모두 이 형식으로 바꿔서 DB에 저장하고 �
 | fingerprint | 문자열 | 같은 결과를 검사마다 구분하는 고유값 | trivy:CVE-2018-18074:requests:requirements.txt |
 
 ※ 키 값 자체는 저장하지 않고, 앞 4자리만 남겨 가린다 (예: AKIA****).
+국내 개인정보는 식별 숫자를 남기지 않는다: `kr-rrn` → `******-*******`, `kr-mobile` → `010-****-****`, `kr-student-id` → `20******`. 개인 키(`private-key`)도 전부 가린다.
 
 ## fingerprint 만드는 방법
 
