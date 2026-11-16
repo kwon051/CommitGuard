@@ -21,10 +21,14 @@ services:
   worker:
     build: ./worker
     volumes:
-      - trivy-cache:/root/.cache/trivy 
+      - trivy-cache:/root/.cache/trivy
     environment:
       VALKEY_HOST: queue
+      VALKEY_PORT: "6379"
       DB_HOST: db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
     depends_on:
       queue:
         condition: service_healthy
