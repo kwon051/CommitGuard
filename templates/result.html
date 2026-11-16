@@ -88,14 +88,18 @@
     <h1>CommitGuard 보안 검사 결과</h1>
     <p>Gitleaks와 Trivy의 보안 검사 결과입니다.</p>
 
+    {% if source == 'database' %}
+    <section class="summary">
+        <strong>실제 검사 결과</strong>
+        <p>저장소: {{ repo_url }}</p>
+        <p>검사가 아직 진행 중이거나 기록이 없으면 잠시 후 이 페이지를 새로고침하세요.</p>
+    </section>
+    {% else %}
     <section class="summary" style="background: #fff8e6;">
         <strong>시연용 샘플 데이터</strong>
-        <p>
-            현재 화면은 Gitleaks와 Trivy의 샘플 JSON을
-            사용한 테스트 결과입니다.
-            실제 저장소 검사 결과는 DB 연동 후 제공됩니다.
-        </p>
+        <p>저장소 주소가 지정되지 않아 샘플 검사 결과를 표시합니다.</p>
     </section>
+    {% endif %}
 
     {% set items = findings | default([], true) %}
 
@@ -208,7 +212,7 @@
         {% endfor %}
     {% else %}
         <section class="summary">
-            <p>표시할 보안 검사 결과가 없습니다.</p>
+            <p>표시할 보안 검사 결과가 없습니다. 실제 결과를 조회 중이라면 검사 완료 후 새로고침하세요.</p>
         </section>
     {% endif %}
 </main>
