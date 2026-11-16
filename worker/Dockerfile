@@ -27,8 +27,9 @@ RUN pip install --no-cache-dir valkey==6.2.0 pymysql==1.1.1 cryptography
 COPY scanners/ /app/scanners/
 COPY gitleaks.toml /app/gitleaks.toml
 
-# compose에서는 queue를 지켜보는 worker.py를 실행한다.
+# compose에서는 queue를 지켜보는 main.py를 실행한다.
+# (파일 이름이 worker.py이면 테스트의 `import worker.scanners`가 이 파일을 잡아 실패한다)
 # 검사 모듈만 따로 시험할 때: docker run --entrypoint python <이미지> -m scanners.gitleaks
-COPY aggregator.py worker.py ./
+COPY aggregator.py main.py ./
 # -u: 로그가 docker compose logs에 바로 보이게 한다.
-CMD ["python", "-u", "worker.py"]
+CMD ["python", "-u", "main.py"]
