@@ -19,10 +19,16 @@ COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 RUN trivy --version
 
 WORKDIR /app
+
+# 큐(valkey)에서 요청을 꺼내고 DB(pymysql)에 저장할 때 쓴다.
+# cryptography는 MySQL 8.4 기본 인증 방식 때문에 pymysql이 필요로 한다.
+RUN pip install --no-cache-dir valkey==6.2.0 pymysql==1.1.1 cryptography
+
 COPY scanners/ /app/scanners/
 COPY gitleaks.toml /app/gitleaks.toml
 
 # compose에서는 queue를 지켜보는 worker.py를 실행한다.
 # 검사 모듈만 따로 시험할 때: docker run --entrypoint python <이미지> -m scanners.gitleaks
-COPY worker.py .
-CMD ["python", "worker.py"]
+COPY aggregator.py worker.py ./
+# -u: 로그가 docker compose logs에 바로 보이게 한다.
+CMD ["python", "-u", "worker.py"]
