@@ -1,0 +1,5 @@
+# web 이미지(저장소 맨 위 Dockerfile)를 만들 때 복사하지 않을 것
+# 진짜 비밀번호 파일
+.env
+# make_sample_repo.py가 로컬에 만드는 가짜 키 저장소 (Git에도 안 올림)
+samples/leaky-repo/
