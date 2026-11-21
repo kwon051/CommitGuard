@@ -6,9 +6,12 @@ import uuid
 
 from pathlib import Path
 import valkey
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, url_for
 
 app = Flask(__name__)
+
+# 입력과 조회에서 동일한 GitHub 저장소 URL만 허용한다.
+REPO_PATTERN = re.compile(r"https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+/?")
 
 # Valkey 연결 설정
 queue = valkey.Valkey(
@@ -31,13 +34,7 @@ def index():
 def scan():
     repo_url = request.form.get("repo_url", "").strip()
 
-    pattern = (
-        r"https://github\.com/"
-        r"[A-Za-z0-9-]+/"
-        r"[A-Za-z0-9_.-]+/?"
-    )
-
-    if not re.fullmatch(pattern, repo_url):
+    if not REPO_PATTERN.fullmatch(repo_url):
         return "올바른 GitHub 저장소 주소를 입력해 주세요.", 400
 
     # 검사 작업 정보 생성
@@ -54,11 +51,48 @@ def scan():
         app.logger.exception("Valkey 작업 등록 실패")
         return "검사 요청을 등록할 수 없습니다.", 503
 
+    # 등록한 검사 작업의 결과를 DB에서 조회할 수 있도록 링크를 제공한다.
+    results_url = url_for("results", repo_url=repo_url)
     return (
-        f"검사 요청 등록 성공! 작업 번호: {job['job_id']}",
+        f'검사 요청 등록 성공! 작업 번호: {job["job_id"]}. '
+        f'<a href="{results_url}">검사 완료 후 결과 확인</a>',
         202,
     )
 
+
+
+def load_db_findings(repo_url):
+    """실제 검사 결과를 MySQL findings 테이블에서 조회한다."""
+    import pymysql
+
+    conn = pymysql.connect(
+        host=os.getenv("DB_HOST", "db"),
+        user=os.getenv("MYSQL_USER", "commitguard"),
+        password=os.getenv("MYSQL_PASSWORD", ""),
+        database=os.getenv("MYSQL_DATABASE", "commitguard"),
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+        connect_timeout=5,
+        read_timeout=10,
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT tool, rule_id, fingerprint, severity, file, line,
+                          title, why, fix, status
+                   FROM findings
+                   WHERE repo_url = %s
+                   ORDER BY CASE severity
+                     WHEN 'CRITICAL' THEN 0
+                     WHEN 'HIGH' THEN 1
+                     WHEN 'MEDIUM' THEN 2
+                     WHEN 'LOW' THEN 3
+                     ELSE 4 END, id DESC""",
+                (repo_url,),
+            )
+            return cursor.fetchall()
+    finally:
+        conn.close()
 
 
 # 보안 검사 결과 샘플 파일 위치
@@ -105,7 +139,20 @@ def load_sample_findings():
 
 @app.route("/results")
 def results():
-    """보안 검사 결과 화면을 보여준다."""
+    """저장소 주소가 지정되면 DB를, 아니면 시연용 샘플을 보여준다."""
+    repo_url = request.args.get("repo_url", "").strip()
+    if repo_url:
+        if not REPO_PATTERN.fullmatch(repo_url):
+            return "올바른 GitHub 저장소 주소를 입력해 주세요.", 400
+        try:
+            findings = load_db_findings(repo_url)
+        except Exception:
+            app.logger.exception("MySQL 검사 결과 조회 실패")
+            return "검사 결과 DB에 연결할 수 없습니다. 잠시 후 다시 확인해 주세요.", 503
+        return render_template(
+            "result.html", findings=findings, missing_files=[],
+            repo_url=repo_url, source="database",
+        )
 
     sample_files = [
         "gitleaks-findings.json",
