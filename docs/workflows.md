@@ -53,14 +53,15 @@ python -m pytest tests worker/tests -v    # unit-test와 같은 검사
 
 - **검사하는 것**: `Dockerfile`(web)과 `worker/Dockerfile`(worker)로 이미지를 만들고, 그 안의 OS 패키지·파이썬 패키지·프로그램에 알려진 취약점이 있는지 본다. web과 worker는 따로 돈다.
 - **비밀키는 보지 않는다**: `--scanners vuln`으로 취약점만 본다. 비밀키는 secret-scan이 맡는다.
-- **실패 기준 (제안안, 팀 확정 전)**: HIGH·CRITICAL은 표로 보여 주기만 하고, **고친 버전이 나와 있는 CRITICAL**이 있을 때만 실패한다.
-- **실패하면**: "고칠 수 있는 CRITICAL 검사" 단계의 표에서 `Library`, `Installed Version`, `Fixed Version`을 보고, Dockerfile의 기본 이미지나 `requirements.txt`의 버전을 올린다.
+- **실패 기준**: **CRITICAL(가장 위험한 등급)이 하나라도 있으면 실패**한다. 고칠 버전이 아직 없어도 실패한다. HIGH는 표로 보여 주기만 한다.
+- **결과 보는 곳**: PR의 Checks → image-scan → **Summary** 화면 맨 앞에 등급별 건수 표가 나온다(`scripts/trivy_summary.sh`가 만든다). 1건 = 보안 구멍 1개 × 그 구멍이 든 부품 1개.
+- **실패하면**: "CRITICAL 검사" 단계의 표에서 `Library`, `Installed Version`, `Fixed Version`을 본다. `Fixed Version`이 있으면 Dockerfile의 기본 이미지나 `requirements.txt`의 버전을 올린다. 비어 있으면(고칠 버전 없음) 기본 이미지를 바꾸거나 그 부품을 빼는 방법을 팀과 정한다.
 - **내 컴퓨터에서**:
 
 ```bash
 docker build -t commitguard-worker:ci ./worker
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.76.2 \
-  image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 commitguard-worker:ci
+  image --scanners vuln --severity CRITICAL --exit-code 1 commitguard-worker:ci
 ```
 
 ## compose-test

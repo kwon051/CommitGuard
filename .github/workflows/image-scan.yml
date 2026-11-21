@@ -1,9 +1,10 @@
 # image-scan: web·worker Docker 이미지를 만들어 Trivy로 알려진 취약점(CVE)을 검사한다.
 # 비밀키 검사는 secret-scan이 맡으므로 여기서는 --scanners vuln(취약점만)으로 돌린다.
 #
-# 실패 기준 (팀 확정 전 제안안):
+# 실패 기준:
 #   - HIGH·CRITICAL은 표로 모두 보여 준다 (실패하지 않음)
-#   - 고친 버전이 나와 있는 CRITICAL이 하나라도 있으면 실패 (--ignore-unfixed)
+#   - CRITICAL(가장 위험한 등급)이 하나라도 있으면 실패. 고칠 버전이 아직 없어도 실패한다.
+#     → 기본 이미지 바꾸기, 부품 빼기, 예외로 둘지 팀이 정하기 중에서 사람이 결정한다.
 name: image-scan
 
 on:
@@ -52,12 +53,24 @@ jobs:
             "$TRIVY_IMAGE" image --scanners vuln --severity HIGH,CRITICAL --format table \
             commitguard-${{ matrix.name }}:ci
 
-      # 여기서 걸리면 빨간 X
-      - name: 고칠 수 있는 CRITICAL 검사
+      # 등급별 건수를 Actions 실행 화면 맨 앞(Summary)에 표로 보여 준다 (실패하지 않음)
+      # 1건 = 보안 구멍(CVE) 1개 × 그 구멍이 든 부품 1개
+      - name: 등급 결과 요약 (Summary 화면)
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v ~/.cache/trivy:/root/.cache/trivy \
-            "$TRIVY_IMAGE" image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 \
+            "$TRIVY_IMAGE" image --quiet --scanners vuln --severity HIGH,CRITICAL \
+            --skip-db-update --format json \
+            commitguard-${{ matrix.name }}:ci > trivy.json
+          bash scripts/trivy_summary.sh trivy.json "${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # 여기서 걸리면 빨간 X
+      - name: CRITICAL 검사
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ~/.cache/trivy:/root/.cache/trivy \
+            "$TRIVY_IMAGE" image --scanners vuln --severity CRITICAL --exit-code 1 \
             --skip-db-update --format table \
             commitguard-${{ matrix.name }}:ci
