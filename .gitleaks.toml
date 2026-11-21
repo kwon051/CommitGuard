@@ -1,0 +1,22 @@
+# 우리 저장소(CommitGuard)를 검사할 때 쓰는 Gitleaks 설정 (secret-scan 워크플로)
+#
+# - 규칙은 worker가 쓰는 worker/gitleaks.toml(기본 규칙 + 국내 규칙 4종)을 그대로 가져온다.
+# - 우리 저장소에는 탐지 테스트용 "가짜" 키·개인정보가 일부러 들어 있다.
+#   그런 파일이 모인 폴더만 아래에서 검사 대상에서 뺀다.
+# - 새 폴더를 빼고 싶으면 PR에서 이유를 적고 리뷰를 받는다. 진짜 키를 빼려고 쓰지 않는다.
+#
+# 내 컴퓨터에서: gitleaks git . --config .gitleaks.toml --redact
+
+title = "CommitGuard self-scan"
+
+[extend]
+path = "worker/gitleaks.toml"
+
+[[allowlists]]
+description = "탐지 테스트용 가짜 키·개인정보가 들어 있는 곳"
+paths = [
+  '''^tests/''',
+  '''^worker/tests/''',
+  '''^samples/''',
+  '''^scripts/make_[a-z_]+_repo\.py$''',
+]
