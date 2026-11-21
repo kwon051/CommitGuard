@@ -1,0 +1,63 @@
+# image-scan: web·worker Docker 이미지를 만들어 Trivy로 알려진 취약점(CVE)을 검사한다.
+# 비밀키 검사는 secret-scan이 맡으므로 여기서는 --scanners vuln(취약점만)으로 돌린다.
+#
+# 실패 기준 (팀 확정 전 제안안):
+#   - HIGH·CRITICAL은 표로 모두 보여 준다 (실패하지 않음)
+#   - 고친 버전이 나와 있는 CRITICAL이 하나라도 있으면 실패 (--ignore-unfixed)
+name: image-scan
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.76.2   # worker 안의 Trivy와 같은 버전
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false               # web이 실패해도 worker 검사는 끝까지 본다
+      matrix:
+        include:
+          - name: web
+            context: .
+          - name: worker
+            context: ./worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ${{ matrix.name }} 이미지 만들기
+        run: docker build -t commitguard-${{ matrix.name }}:ci ${{ matrix.context }}
+
+      # 취약점 DB(수백 MB)를 실행마다 새로 받지 않도록 캐시한다
+      - name: Trivy DB 캐시
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+
+      - name: HIGH·CRITICAL 목록 (실패하지 않음)
+        run: |
+          mkdir -p ~/.cache/trivy
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ~/.cache/trivy:/root/.cache/trivy \
+            "$TRIVY_IMAGE" image --scanners vuln --severity HIGH,CRITICAL --format table \
+            commitguard-${{ matrix.name }}:ci
+
+      # 여기서 걸리면 빨간 X
+      - name: 고칠 수 있는 CRITICAL 검사
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ~/.cache/trivy:/root/.cache/trivy \
+            "$TRIVY_IMAGE" image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 \
+            --skip-db-update --format table \
+            commitguard-${{ matrix.name }}:ci
