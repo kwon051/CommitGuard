@@ -1,6 +1,6 @@
 """worker: 큐에서 검사 요청을 꺼내 검사하고 결과를 DB에 저장한다.
 
-흐름: web이 큐(Valkey)에 넣은 요청 → 저장소 clone → Gitleaks·Trivy 검사
+흐름: web이 큐(Valkey)에 넣은 요청 → 저장소 clone → Gitleaks·Trivy·가짜 패키지 검사
       → 수집기(aggregator)로 합치기 → MySQL findings 테이블에 저장
 """
 import json
@@ -13,7 +13,7 @@ import time
 import valkey
 
 import aggregator
-from scanners import gitleaks, trivy
+from scanners import fake_package, gitleaks, trivy
 
 # web(app.py)과 같은 대기열 이름을 쓴다.
 QUEUE_NAME = "commitguard:scan:pending"
@@ -79,6 +79,8 @@ def process_job(job):
         # 도구 하나라도 실패하면 여기서 오류가 나서 DB에 저장하지 않는다.
         # (일부 결과만 저장하면 안 고친 항목이 fixed로 바뀐다)
         findings = gitleaks.scan(repo_path) + trivy.scan(repo_path)
+        # 가짜 패키지 탐지는 조회 실패를 '확인 불가' 결과로 돌려주고 예외를 내지 않는다
+        findings += fake_package.scan(repo_path) 
 
     merged = aggregator.merge(findings)
     conn = aggregator.get_connection()
