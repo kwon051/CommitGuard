@@ -40,7 +40,7 @@ Gitleaks **8.30.1**로 원래의 규칙별 탐지 대상 5개·비탐지 대상 
 
 ## 공유용 결과 파일
 
-기존 기본 규칙 샘플에 국내 규칙 예시 40개(탐지 대상 20개, 비탐지 대상 20개)를 추가한 Git 저장소를 만들고, 전체 Git 이력을 한 번 검사한 결과를 저장소에 보관한다. 국내 규칙 전용 JSON을 따로 만들지 않는다.
+아래 공유용 파일은 기본 규칙 샘플에 국내 규칙 예시 40개(탐지 대상 20개, 비탐지 대상 20개)를 추가했던 #16의 시연 결과다. 기본·국내 규칙을 같은 파일에서 보여 준다.
 
 | 파일 | 내용 |
 | --- | --- |
@@ -51,13 +51,7 @@ Gitleaks **8.30.1**로 원래의 규칙별 탐지 대상 5개·비탐지 대상 
 
 `gitleaks git`으로 검사한 결과라 `File`은 저장소 안의 상대 경로이며 `Commit`·`Author`·`Date`를 포함한다. `Fingerprint`는 Gitleaks가 생성한 값을 그대로 유지한다. 기존 5개 커밋 뒤에 국내 예시를 넣은 커밋을 추가하므로 기존 기본 규칙의 fingerprint도 유지된다. 기본 예시는 `scripts/make_sample_repo.py`, 국내 예시는 `tests/test_rules.py`의 `CASES`에서 재생성한다. 개인정보의 식별 숫자는 전부 가리고 API 키는 기존 공통 형식처럼 앞 최대 4자리만 남긴다.
 
-저장소 루트에서 다음 명령으로 공유용 결과를 재생성한다.
-
-```bash
-REQUIRE_GITLEAKS=1 python -m pytest tests/test_rules.py -v --gitleaks-report-dir samples
-```
-
-옵션을 생략하면 테스트는 임시 폴더만 사용한다.
+[#17의 규칙별 결과표와 실행 방법](rule-test.md)에서 확장된 80개 예시를 검사하고 별도 경로에 통합 결과 JSON을 내보낼 수 있다. 기존 시연 결과의 fingerprint는 확장 검사에서도 유지한다.
 
 ## 실행
 
@@ -93,6 +87,5 @@ docker run --rm --entrypoint python \
 - API 키는 서비스가 드러나는 변수·쿼리 이름과 문자 범위·길이·entropy 조건을 사용한다. 환경 변수 참조는 이 테스트의 예시에서 제외되지만, 모든 언어의 참조 문법을 해석하는 것은 아니다.
 - 같은 위치의 중복 원본은 원본 `Fingerprint` 기준으로 합친다. 값이 같은 경우라도 fingerprint가 다르면 서로 다른 finding으로 유지한다.
 - 이 작업은 규칙과 검사 모듈 검증이다. 현재 `worker/worker.py`는 시작 메시지를 출력하는 자리표시자여서, 웹 요청→queue→외부 저장소 clone→DB 저장까지의 통합은 별도 작업이다.
-- 규칙별 10/10 확장은 [#17](https://github.com/kwon051/CommitGuard/issues/17) 범위다.
 
 설정 형식과 `--config` 우선순위는 [Gitleaks v8.30.1 공식 문서](https://github.com/gitleaks/gitleaks/blob/v8.30.1/README.md#configuration)를 따른다.
