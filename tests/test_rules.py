@@ -1,11 +1,11 @@
 """국내 탐지 규칙 4종 테스트 (worker/gitleaks.toml).
 
-규칙마다 '잡혀야 하는 가짜 예시' 5건과 '잡히면 안 되는 예시' 5건을 파일로 만들어
+규칙마다 '잡혀야 하는 가짜 예시' 10건과 '잡히면 안 되는 예시' 10건을 파일로 만들어
 기본 규칙 샘플과 같은 Git 저장소에서 Gitleaks를 한 번 돌리고,
 파일별로 해당 규칙이 잡혔는지 확인한다.
 
 실행: 저장소 루트에서  python -m pytest tests/test_rules.py -v
-  - --gitleaks-report-dir samples 옵션으로 기본·국내 규칙의 통합 결과를 저장한다.
+  - --gitleaks-report-dir DIR 옵션으로 기본·국내 규칙의 통합 결과를 저장한다.
   - gitleaks가 없으면 건너뛴다. CI에서는 REQUIRE_GITLEAKS=1로 건너뛰지 않고 실패하게 한다.
 
 가짜 값 처리:
@@ -60,8 +60,11 @@ FAKE_NAVER_SECRET = "".join(_rng.sample(_ALNUM, 10))
 FAKE_NAVER_ID = "".join(_rng.choice(_ALNUM) for _ in range(20))
 FAKE_DATA_GO_KR = "".join(_rng.choice(_B64) for _ in range(60)) + "%2B" + \
     "".join(_rng.choice(_B64) for _ in range(24)) + "%3D%3D"
+FAKE_NCP_ACCESS = "".join(_rng.choice(_ALNUM) for _ in range(20))
+FAKE_NCLOUD_SECRET = "".join(_rng.choice(_ALNUM) for _ in range(40))
 
 # --- 규칙별 예시 ---------------------------------------------------------------
+# 각 목록의 처음 5개는 기존 공유용 샘플의 순서를 유지한다.
 CASES = {
     "kr-rrn": {
         "hit": [
@@ -70,6 +73,11 @@ CASES = {
             "김철수,030405-§3926718,서울",
             '{"jumin": "071231-§4058271"}',
             "# 테스트용 주민번호 991001-§1640392",
+            'resident_no: "901130-§2874510"',
+            'rrn = "890131-§1549627"',
+            '{"rrn":"220228-§4237946"}',
+            "등록번호,041031-§3862519",
+            "테스트 식별값: 991230-§2496183",
         ],
         "miss": [
             'rrn = "951317-1739204"',            # 13월: 없는 날짜
@@ -77,6 +85,11 @@ CASES = {
             'rrn = "800101-1234567"',            # 교재용 가짜 번호
             'rrn = "950817-1******"',            # 이미 가린 값
             "주문번호 20250817-1739204",          # 8자리 날짜형 주문번호
+            'rrn = "990631-§1874510"',           # 6월은 30일까지
+            'rrn = "990300-§1549627"',           # 0일은 없음
+            'rrn = "220228-§5237946"',           # 지원하지 않는 뒷자리 첫 숫자
+            "rrn = 041031§3862519",              # 하이픈 없음
+            "rrn_ref = 991230-§24961837",        # 뒷자리가 8자리인 경우
         ],
     },
     "kr-mobile": {
@@ -86,6 +99,11 @@ CASES = {
             "tel: 010.§7362.1048",
             "연락처: 010 §9182 3746",
             'contact = "+82 10-§6273-8410"',
+            'mobile: "+82-10-§2948-7635"',
+            'tel = "+8210§37648591"',
+            '{"phone":"+82 10 §5381 9427"}',
+            "contact,010-§2679-5104",
+            "휴대폰 = 010-§8916 2547",
         ],
         "miss": [
             'phone = "010-1234-5678"',           # 가운데 1xxx: 배정되지 않는 번호(예시용)
@@ -93,6 +111,11 @@ CASES = {
             'office = "02-3456-7890"',           # 유선 전화
             "order_no = 0104827359123",          # 더 긴 숫자열의 일부
             'phone = "010-****-3591"',           # 이미 가린 값
+            'legacy_phone = "011-§2948-7635"',   # 010 외의 휴대폰 접두사
+            'phone = "010-§0764-8591"',          # 지원하지 않는 국번
+            'phone = "010-§5381-942"',           # 끝자리 자릿수 부족
+            'phone = "010(§2679)5104"',          # 지원하지 않는 구분자
+            'phone = "+81 10-§8916-2547"',       # 한국 국가번호가 아님
         ],
     },
     "kr-student-id": {
@@ -102,6 +125,11 @@ CASES = {
             "STUDENT_NO=2019§5678",
             "학번: 2024§0871",
             "hakbun = 2022§314159",
+            'StudentNumber = "2000§8914"',
+            'student-number: "2039§72815"',
+            '{"stu_id":"2026§391842"}',
+            'STU-NO = "2010§72105"',
+            "studentNum=2018§416327",
         ],
         "miss": [
             "year_code = 20231234",              # 학번이라는 이름이 없음
@@ -109,6 +137,11 @@ CASES = {
             '학번 = "2023XXXX"',                  # 자리표시자
             'student_id = request.form["student_id"]',
             "학번은 8자리 숫자입니다",
+            "StudentNumber = 2000§891",          # 7자리
+            "student-number: 2039§7281592",      # 11자리
+            "stu_id = 1999§391842",              # 시작 연도 미만
+            "STU-NO = 2040§72105",               # 종료 연도 초과
+            "studentNum = 2018§416327B",         # 숫자 뒤에 문자가 이어짐
         ],
     },
     "kr-service-api-key": {
@@ -118,6 +151,11 @@ CASES = {
             f"url = 'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey={FAKE_DATA_GO_KR}&numOfRows=10'",
             f"KAKAO_ADMIN_KEY={FAKE_KAKAO_ADMIN}",
             f'const naverClientId = "{FAKE_NAVER_ID}";',
+            f'NCP_ACCESS_KEY="{FAKE_NCP_ACCESS}"',
+            f'ncloud-secret-key: "{FAKE_NCLOUD_SECRET}"',
+            f'const kakaoApiKey = "{FAKE_KAKAO}";',
+            f'{{"naver-client-id":"{FAKE_NAVER_ID}"}}',
+            f'ODCLOUD_SERVICE_KEY="{FAKE_DATA_GO_KR}"',
         ],
         "miss": [
             'KAKAO_REST_API_KEY = os.environ["KAKAO_REST_API_KEY"]',
@@ -125,6 +163,11 @@ CASES = {
             'KAKAO_MAP_URL = "https://dapi.kakao.com/v2/local"',
             "url = f'https://apis.data.go.kr/x?serviceKey=${DATA_GO_KR_KEY}'",
             "NAVER_SEARCH_LIMIT = 100",
+            "const kakaoApiKey = process.env.KAKAO_API_KEY;",
+            'NCLOUD_SECRET_KEY = "${NCLOUD_SECRET_KEY}"',
+            'NCP_ACCESS_KEY = "xY97N8mQ2"',        # 10자 미만
+            'KAKAO_API_KEY = "zzzzzzzzzzzzzzzz"',  # 낮은 entropy
+            'ODCLOUD_SERVICE_KEY = "placeholder_for_odcloud"',
         ],
     },
 }
@@ -152,11 +195,16 @@ def detected(tmp_path_factory, request):
     )
     src = repo / "kr"
     src.mkdir()
-    for rule, kind, i in PARAMS:
-        (src / _name(rule, kind, i)).write_text(unmark(CASES[rule][kind][i]) + "\n", encoding="utf-8")
-    sample_git(repo, "add", "kr")
-    sample_git(repo, "commit", "-q", "-m", "국내 규칙 가짜 탐지·비탐지 예시 추가",
-               date="2026-11-15T10:00:00+09:00")
+    # 기존 샘플과 같은 커밋을 먼저 만들어 기존 탐지의 fingerprint를 보존한다.
+    for indices, message, date in (
+        (range(5), "국내 규칙 가짜 탐지·비탐지 예시 추가", "2026-11-15T10:00:00+09:00"),
+        (range(5, 10), "국내 규칙 검증 예시 확장", "2026-11-22T10:00:00+09:00"),
+    ):
+        for rule, kind, i in PARAMS:
+            if i in indices:
+                (src / _name(rule, kind, i)).write_text(unmark(CASES[rule][kind][i]) + "\n", encoding="utf-8")
+        sample_git(repo, "add", "kr")
+        sample_git(repo, "commit", "-q", "-m", message, date=date)
 
     results = run_gitleaks(repo, CONFIG)
     results.sort(key=lambda r: (r["Fingerprint"], r["Match"], r["Secret"]))
@@ -173,21 +221,19 @@ def detected(tmp_path_factory, request):
     return {(Path(r["File"]).name, r["RuleID"]) for r in results}
 
 
-def test_each_rule_has_five_hit_and_five_miss_cases():
+def test_each_rule_has_ten_hit_and_ten_miss_cases():
     for rule in KR_RULES:
-        assert len(CASES[rule]["hit"]) == 5
-        assert len(CASES[rule]["miss"]) == 5
+        assert len(CASES[rule]["hit"]) == 10
+        assert len(CASES[rule]["miss"]) == 10
 
 
 @pytest.mark.parametrize("rule,kind,i", PARAMS,
                          ids=[f"{r}-{k}-{i + 1}" for r, k, i in PARAMS])
 def test_rule_case(detected, rule, kind, i):
-    found = (_name(rule, kind, i), rule) in detected
-    example = unmark(CASES[rule][kind][i])
-    if kind == "hit":
-        assert found, f"잡혀야 하는데 안 잡힘: {example}"
-    else:
-        assert not found, f"잡히면 안 되는데 잡힘: {example}"
+    name = _name(rule, kind, i)
+    matched_rules = {rule_id for filename, rule_id in detected if filename == name and rule_id in KR_RULES}
+    expected_rules = {rule} if kind == "hit" else set()
+    assert matched_rules == expected_rules, name
 
 
 def test_default_rules_still_active(tmp_path):
@@ -203,7 +249,7 @@ def test_default_rules_still_active(tmp_path):
     assert "aws-access-token" in rules
 
 
-# 초안의 5/5 예시 외 경계 조건. 가짜 값은 스캔 시에만 조립한다.
+# 규칙별 10/10 예시 외 경계 조건. 가짜 값은 스캔 시에만 조립한다.
 EDGE_CASES = [
     ("kr-rrn", 'rrn = "990231-§1739204"', False),
     ("kr-rrn", 'rrn = "990431-§1739204"', False),
