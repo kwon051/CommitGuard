@@ -1,0 +1,114 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CommitGuard | 검사 이력</title>
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 40px 20px;
+            background: #f4f6f2;
+            color: #26382e;
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: auto;
+        }
+
+        h1 { color: #426752; }
+
+        .back {
+            color: #426752;
+            text-decoration: none;
+        }
+
+        .record {
+            background: white;
+            padding: 24px;
+            margin: 18px 0;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px #0000000a;
+        }
+
+        .record h2 {
+            margin-top: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin: 16px 0;
+        }
+
+        .stat {
+            padding: 10px 14px;
+            background: #edf1ed;
+            border-radius: 8px;
+        }
+
+        .detail-link {
+            display: inline-block;
+            color: #426752;
+            font-weight: bold;
+        }
+
+        .empty {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<main class="container">
+    <a href="/" class="back">← 저장소 입력 화면으로</a>
+
+    <h1>CommitGuard 검사 이력</h1>
+    <p>검사 결과가 저장된 GitHub 저장소 목록입니다.</p>
+
+    {% if records %}
+        {% for record in records %}
+        <section class="record">
+            <h2>{{ record.repo_url }}</h2>
+
+            <p>마지막 기록 변경: {{ record.last_updated }}</p>
+
+            <div class="stats">
+                <span class="stat">
+                    전체 {{ record.total }}건
+                </span>
+                <span class="stat">
+                    미해결 {{ record.open_count }}건
+                </span>
+                <span class="stat">
+                    해결 {{ record.fixed_count }}건
+                </span>
+                <span class="stat">
+                    무시 {{ record.ignored_count }}건
+                </span>
+            </div>
+
+            <a class="detail-link"
+               href="{{ url_for('results', repo_url=record.repo_url) }}">
+                보안 검사 결과 보기 →
+            </a>
+        </section>
+        {% endfor %}
+    {% else %}
+        <div class="empty">
+            <h2>저장된 검사 결과가 없습니다.</h2>
+            <p>GitHub 저장소를 검사하면 이곳에서 확인할 수 있습니다.</p>
+        </div>
+    {% endif %}
+</main>
+</body>
+</html>
