@@ -1,0 +1,42 @@
+# compose-test: docker compose로 4개 컨테이너를 띄우고,
+# 검사 1건이 web → queue → worker → db 까지 끝까지 도는지 확인한다.
+name: compose-test
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # 러너에는 .env가 없다 → 가짜 값이 든 .env.example을 복사해서 쓴다
+      - name: .env 만들기
+        run: cp .env.example .env
+
+      # --wait: 상태 확인(healthcheck)이 있는 컨테이너가 건강해질 때까지 기다린다
+      - name: 컨테이너 띄우기
+        run: docker compose up -d --build --wait
+
+      - name: 검사 1건 끝까지 돌려 보기
+        run: bash scripts/compose_test.sh
+
+      # 실패했을 때만: 어느 컨테이너에서 무슨 일이 있었는지 로그를 남긴다
+      - name: 실패 시 컨테이너 로그
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail 100
+
+      # 성공·실패와 상관없이 정리한다 (-v: 볼륨까지 삭제)
+      - name: 정리
+        if: always()
+        run: docker compose down -v
