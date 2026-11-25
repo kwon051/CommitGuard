@@ -3,12 +3,14 @@ import json
 import os
 import re
 import uuid
+import secrets
 
 from pathlib import Path
 import valkey
-from flask import Flask, render_template, request, url_for
+from flask import Flask, render_template, request, url_for, session, redirect
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
 
 # 입력과 조회에서 동일한 GitHub 저장소 URL만 허용한다.
 REPO_PATTERN = re.compile(r"https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+/?")
@@ -78,9 +80,9 @@ def load_db_findings(repo_url):
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                """SELECT tool, rule_id, fingerprint, severity, file, line,
-                          title, why, fix, status
-                   FROM findings
+                """SELECT id, tool, rule_id, fingerprint, severity, file, line,
+          title, why, fix, status, assignee
+   FROM findings
                    WHERE repo_url = %s
                    ORDER BY CASE severity
                      WHEN 'CRITICAL' THEN 0
@@ -181,3 +183,129 @@ def results():
         findings=findings,
         missing_files=[],
     )
+
+# 검사 이력 화면: DB에 저장된 저장소별 보안 항목 조회
+def load_history_records():
+    """저장소별 검사 결과와 처리 상태를 조회한다."""
+    import pymysql
+
+    conn = pymysql.connect(
+        host=os.getenv("DB_HOST", "db"),
+        user=os.getenv("MYSQL_USER", "commitguard"),
+        password=os.getenv("MYSQL_PASSWORD", ""),
+        database=os.getenv("MYSQL_DATABASE", "commitguard"),
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+        connect_timeout=5,
+        read_timeout=10,
+    )
+
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    repo_url,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN status = 'open'
+                        THEN 1 ELSE 0 END) AS open_count,
+                    SUM(CASE WHEN status = 'fixed'
+                        THEN 1 ELSE 0 END) AS fixed_count,
+                    SUM(CASE WHEN status = 'ignored'
+                        THEN 1 ELSE 0 END) AS ignored_count,
+                    MAX(updated_at) AS last_updated
+                FROM findings
+                GROUP BY repo_url
+                ORDER BY last_updated DESC
+                """
+            )
+            return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+@app.route("/history")
+def history():
+    """검사 결과 이력 화면을 보여준다."""
+    try:
+        records = load_history_records()
+    except Exception:
+        app.logger.exception("검사 이력 DB 조회 실패")
+        return "검사 이력을 불러올 수 없습니다.", 503
+
+    return render_template(
+        "history.html",
+        records=records,
+    )
+
+
+@app.context_processor
+def inject_csrf_token():
+    def csrf_token():
+        if "csrf_token" not in session:
+            session["csrf_token"] = secrets.token_urlsafe(32)
+        return session["csrf_token"]
+
+    return {"csrf_token": csrf_token}
+
+
+@app.route("/findings/<int:finding_id>/update", methods=["POST"])
+def update_finding(finding_id):
+    """보안 항목의 담당자와 처리 상태를 변경한다."""
+
+    saved_token = session.get("csrf_token")
+    submitted_token = request.form.get("csrf_token", "")
+
+    if not saved_token or not secrets.compare_digest(
+        saved_token, submitted_token
+    ):
+        return "잘못된 요청입니다.", 403
+
+    repo_url = request.form.get("repo_url", "").strip()
+    assignee = request.form.get("assignee", "").strip()
+    status = request.form.get("status", "").strip()
+
+    if not REPO_PATTERN.fullmatch(repo_url):
+        return "올바르지 않은 저장소 주소입니다.", 400
+
+    if len(assignee) > 100:
+        return "담당자 이름이 너무 깁니다.", 400
+
+    if status not in ("open", "fixed", "ignored"):
+        return "올바르지 않은 처리 상태입니다.", 400
+
+    import pymysql
+
+    conn = None
+    try:
+        conn = pymysql.connect(
+            host=os.getenv("DB_HOST", "db"),
+            user=os.getenv("MYSQL_USER", "commitguard"),
+            password=os.getenv("MYSQL_PASSWORD", ""),
+            database=os.getenv("MYSQL_DATABASE", "commitguard"),
+            charset="utf8mb4",
+        )
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE findings
+                SET assignee = %s, status = %s
+                WHERE id = %s AND repo_url = %s
+                """,
+                (assignee or None, status, finding_id, repo_url),
+            )
+
+        conn.commit()
+
+    except Exception:
+        if conn:
+            conn.rollback()
+        app.logger.exception("담당자 및 상태 변경 실패")
+        return "변경 사항을 저장하지 못했습니다.", 503
+
+    finally:
+        if conn:
+            conn.close()
+
+    return redirect(url_for("results", repo_url=repo_url), code=303)
