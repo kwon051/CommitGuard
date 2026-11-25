@@ -1,0 +1,31 @@
+# 검사기 (compose의 worker). pod 2개, 큐에서 일감을 나눠 가져간다.
+# 누가 접속해 오지 않으므로 Service가 없다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: commitguard-worker:dev
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: { name: commitguard-config }
+            - secretRef: { name: commitguard-secret }
+          volumeMounts:
+            - name: trivy-cache
+              mountPath: /root/.cache/trivy
+      volumes:
+        # compose의 trivy-cache. pod마다 따로 쓰는 임시 공간이라 pod가 새로 뜨면 DB를 다시 받는다.
+        # (pod 2개가 한 저장 공간을 같이 쓰려면 ReadWriteMany 저장소가 필요해서 이렇게 둠)
+        - name: trivy-cache
+          emptyDir: {}
