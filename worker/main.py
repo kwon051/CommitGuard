@@ -78,14 +78,17 @@ def process_job(job):
         clone_repo(repo_url, repo_path)
         # 도구 하나라도 실패하면 여기서 오류가 나서 DB에 저장하지 않는다.
         # (일부 결과만 저장하면 안 고친 항목이 fixed로 바뀐다)
-        findings = gitleaks.scan(repo_path) + trivy.scan(repo_path)
+        secret_findings = gitleaks.scan(repo_path)
+        findings = secret_findings + trivy.scan(repo_path)
         # 가짜 패키지 탐지는 조회 실패를 '확인 불가' 결과로 돌려주고 예외를 내지 않는다
-        findings += fake_package.scan(repo_path) 
+        findings += fake_package.scan(repo_path)
 
+    public_readiness = gitleaks.assess_public_readiness(secret_findings)
     merged = aggregator.merge(findings)
     conn = aggregator.get_connection()
     try:
-        return aggregator.save_to_db(conn, repo_url, merged)
+        saved_result = aggregator.save_to_db(conn, repo_url, merged)
+        return {**saved_result, "public_readiness": public_readiness}
     finally:
         conn.close()
 
@@ -116,8 +119,7 @@ def main():
             log(f"검사 시작 {job_id}: {job.get('repo_url')}")
             set_status(queue, job, "running")
             result = process_job(job)
-            set_status(queue, job, "done",
-                       saved=result["saved"], fixed=result["fixed"])
+            set_status(queue, job, "done", **result)
             log(f"검사 완료 {job_id}: 저장 {result['saved']}건, fixed {result['fixed']}건")
         except Exception as e:  # 한 건이 실패해도 worker는 계속 돈다
             set_status(queue, job, "failed", error=str(e))

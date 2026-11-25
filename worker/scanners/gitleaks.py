@@ -10,6 +10,7 @@
 
 명령줄 사용 (worker 폴더에서):
     python -m scanners.gitleaks <저장소경로> --raw raw.json --out findings.json
+    python -m scanners.gitleaks <저장소경로> --readiness readiness.json
 """
 
 from __future__ import annotations
@@ -208,8 +209,12 @@ def run_gitleaks(repo_path: str | Path, config_path: str | Path | None = None,
             raise GitleaksError(f"gitleaks 검사 시간 초과({timeout}초)") from e
         if proc.returncode != 0:
             raise GitleaksError(proc.stderr.strip() or f"gitleaks 종료 코드 {proc.returncode}")
-        text = report.read_text(encoding="utf-8").strip() if report.exists() else ""
-        raw = json.loads(text) if text else []
+        try:
+            raw = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise GitleaksError("Gitleaks JSON 검사 결과를 읽을 수 없습니다.") from e
+        if not isinstance(raw, list):
+            raise GitleaksError("Gitleaks JSON 검사 결과는 목록이어야 합니다.")
     return sanitize_raw(raw)
 
 
@@ -307,16 +312,40 @@ def scan(repo_path: str | Path, config_path: str | Path | None = None) -> list[d
     return to_findings(run_gitleaks(repo_path, config_path))
 
 
+def assess_public_readiness(findings: list[dict[str, Any]]) -> dict[str, Any]:
+    """완료된 Gitleaks 검사 1회의 결과로 공개 판정과 차단 사유를 만든다."""
+    reasons = [
+        {key: finding[key] for key in ("rule_id", "severity", "file", "line")}
+        for finding in findings
+    ]
+    return {"can_publish": not reasons, "reasons": reasons}
+
+
 def _main() -> None:
     p = argparse.ArgumentParser(description="Gitleaks 검사 후 공통 형식으로 변환")
     p.add_argument("repo", help="검사할 Git 저장소 경로")
     p.add_argument("--config", help="Gitleaks 설정 파일(.gitleaks.toml)")
     p.add_argument("--raw", help="가린 원본 JSON을 저장할 경로")
     p.add_argument("--out", help="공통 형식 JSON을 저장할 경로 (없으면 화면 출력)")
+    p.add_argument("--readiness", help="공개 전환 판정 JSON을 저장할 경로")
     args = p.parse_args()
+
+    if args.readiness:
+        try:
+            history = subprocess.run(
+                ["git", "-C", args.repo, "rev-parse", "--is-shallow-repository"],
+                check=True, capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            p.error("공개 전환을 판정할 Git 저장소의 이력을 확인할 수 없습니다.")
+        if history.stdout.strip() != "false":
+            p.error("공개 전환 판정에는 전체 이력을 포함하는 Git 저장소가 필요합니다.")
 
     raw = run_gitleaks(args.repo, args.config)
     findings = to_findings(raw)
+    if args.readiness:
+        decision = json.dumps(assess_public_readiness(findings), ensure_ascii=False, indent=2)
+        Path(args.readiness).write_text(decision + "\n", encoding="utf-8")
     if args.raw:
         Path(args.raw).write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     text = json.dumps(findings, ensure_ascii=False, indent=2) + "\n"

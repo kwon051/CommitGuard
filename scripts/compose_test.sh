@@ -5,7 +5,7 @@
 # 미리 해 둘 것: cp .env.example .env && docker compose up -d --build --wait
 # 사용:        bash scripts/compose_test.sh
 #
-# 통과: 상태가 done이고 db에 그 저장소의 결과가 1건 이상 있으면 exit 0
+# 통과: 상태가 done이고 DB 결과와 웹 공개 불가 판정이 확인되면 exit 0
 # 실패: 상태가 failed이거나, 제한 시간 안에 끝나지 않으면 exit 1
 set -euo pipefail
 
@@ -71,4 +71,12 @@ if [ "${count:-0}" -lt 1 ]; then
   exit 1
 fi
 
-echo "✅ web → queue → worker → db 검사 1건 통과 ($(( $(date +%s) - start ))초)"
+echo "④ 웹 결과에 Gitleaks 공개 불가 판정이 표시되는지 확인"
+page=$(curl -fsS -G "$WEB_URL/results" \
+  --data-urlencode "repo_url=$REPO_URL" --data-urlencode "job_id=$job_id")
+if [[ "$page" != *"<strong>공개 불가</strong>"* ]]; then
+  echo "❌ 이 작업의 공개 불가 판정을 웹에서 확인할 수 없습니다"
+  exit 1
+fi
+
+echo "✅ web → queue → worker → db 검사 및 공개 전환 판정 통과 ($(( $(date +%s) - start ))초)"
