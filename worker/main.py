@@ -13,7 +13,7 @@ import time
 import valkey
 
 import aggregator
-from scanners import fake_package, gitleaks, trivy
+from scanners import fake_package, gitleaks, similar_package, trivy
 
 # web(app.py)과 같은 대기열 이름을 쓴다.
 QUEUE_NAME = "commitguard:scan:pending"
@@ -80,7 +80,10 @@ def process_job(job):
         # (일부 결과만 저장하면 안 고친 항목이 fixed로 바뀐다)
         findings = gitleaks.scan(repo_path) + trivy.scan(repo_path)
         # 가짜 패키지 탐지는 조회 실패를 '확인 불가' 결과로 돌려주고 예외를 내지 않는다
-        findings += fake_package.scan(repo_path) 
+        findings += fake_package.scan(repo_path)
+        # 유사 이름 탐지는 인터넷 조회 없이 유명 패키지 목록과 비교만 한다.
+        # 목록 파일이 깨졌으면 오류를 내서 저장하지 않는다 (빈 결과로 저장하면 지난 결과가 fixed로 바뀜)
+        findings += similar_package.scan(repo_path)
 
     merged = aggregator.merge(findings)
     conn = aggregator.get_connection()
