@@ -86,13 +86,26 @@
     <a href="/" class="back">← 저장소 입력 화면으로</a>
 
     <h1>CommitGuard 보안 검사 결과</h1>
-    <p>Gitleaks와 Trivy의 보안 검사 결과입니다.</p>
+    <p>비밀정보·국내 개인정보(Gitleaks), 알려진 취약점(Trivy), 가짜·유사 이름 패키지 검사 결과입니다.</p>
 
     {% if source == 'database' %}
     <section class="summary">
         <strong>실제 검사 결과</strong>
         <p>저장소: {{ repo_url }}</p>
-        <p>검사가 아직 진행 중이거나 기록이 없으면 잠시 후 이 페이지를 새로고침하세요.</p>
+        {% if not job_id %}
+        <p>저장소에 누적된 검사 기록입니다.</p>
+        {% elif scan_status == 'done' %}
+        <p><strong>검사 완료</strong> — 보안 검사 작업이 완료되었습니다.</p>
+        {% elif scan_status in ('queued', 'running') %}
+        <p><strong>검사 진행 중</strong> — 잠시 후 새로고침하세요.</p>
+        {% elif scan_status == 'failed' %}
+        <p><strong>검사 실패</strong> — 다시 검사해 주세요.</p>
+        {% else %}
+        <p><strong>검사 상태 확인 불가</strong> — 대기 중이거나 작업 기록이 없거나 만료되었습니다. 새로고침 후에도 같다면 다시 검사하세요.</p>
+        {% endif %}
+        {% if job_id and scan_status != 'done' %}
+        <p>아래 목록은 기존에 저장된 기록이며 이번 검사 결과가 아닐 수 있습니다.</p>
+        {% endif %}
     </section>
     {% else %}
     <section class="summary" style="background: #fff8e6;">
@@ -124,6 +137,13 @@
     {% endif %}
 
     {% set items = findings | default([], true) %}
+    {% if source == 'database' %}
+        {% set active_items = items | selectattr('status', 'equalto', 'open') | list %}
+        {% set fixed_items = items | selectattr('status', 'equalto', 'fixed') | list %}
+        {% set ignored_items = items | selectattr('status', 'equalto', 'ignored') | list %}
+    {% else %}
+        {% set active_items = items %}
+    {% endif %}
 
 {% if missing_files | default([]) %}
 <section class="summary" style="background: #fff0f0;">
@@ -142,36 +162,39 @@
 <section class="summary">
     <h2>검사 결과 요약</h2>
 
-    <p>
-        발견된 보안 항목:
-        <strong>{{ items | length }}건</strong>
-    </p>
+    {% if source == 'database' %}
+    <p>누적 보안 항목: <strong>{{ items | length }}건</strong></p>
+    <p>미해결: <strong>{{ active_items | length }}건</strong> · 해결: {{ fixed_items | length }}건 · 무시: {{ ignored_items | length }}건</p>
+    <p>아래 위험도는 미해결 항목만 집계합니다. 해결 및 무시 기록은 목록에 유지됩니다.</p>
+    {% else %}
+    <p>발견된 보안 항목: <strong>{{ items | length }}건</strong></p>
+    {% endif %}
 
     <hr>
 
     <p style="color: #b91c1c;">
         <strong>CRITICAL (매우 위험):</strong>
-        {{ items | selectattr('severity', 'equalto', 'CRITICAL') | list | length }}건
+        {{ active_items | selectattr('severity', 'equalto', 'CRITICAL') | list | length }}건
     </p>
 
     <p style="color: #ea580c;">
         <strong>HIGH (높음):</strong>
-        {{ items | selectattr('severity', 'equalto', 'HIGH') | list | length }}건
+        {{ active_items | selectattr('severity', 'equalto', 'HIGH') | list | length }}건
     </p>
 
     <p style="color: #d97706;">
         <strong>MEDIUM (보통):</strong>
-        {{ items | selectattr('severity', 'equalto', 'MEDIUM') | list | length }}건
+        {{ active_items | selectattr('severity', 'equalto', 'MEDIUM') | list | length }}건
     </p>
 
     <p style="color: #16a34a;">
         <strong>LOW (낮음):</strong>
-        {{ items | selectattr('severity', 'equalto', 'LOW') | list | length }}건
+        {{ active_items | selectattr('severity', 'equalto', 'LOW') | list | length }}건
     </p>
 
     <p style="color: #64748b;">
         <strong>UNKNOWN (미분류):</strong>
-        {{ items | selectattr('severity', 'equalto', 'UNKNOWN') | list | length }}건
+        {{ active_items | selectattr('severity', 'equalto', 'UNKNOWN') | list | length }}건
     </p>
 </section>
 
@@ -246,6 +269,7 @@
 >
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="repo_url" value="{{ repo_url }}">
+    <input type="hidden" name="job_id" value="{{ job_id | default('', true) }}">
 
     <label for="assignee-{{ finding.id }}">
         <strong>담당자 선택</strong>
@@ -300,7 +324,10 @@
         {% endfor %}
     {% else %}
         <section class="summary">
-            <p>표시할 보안 검사 결과가 없습니다. 실제 결과를 조회 중이라면 검사 완료 후 새로고침하세요.</p>
+            <p>표시할 보안 검사 결과가 없습니다.</p>
+            {% if source == 'database' and job_id and scan_status in ('queued', 'running', 'unknown') %}
+            <p>검사 완료 후 새로고침하세요.</p>
+            {% endif %}
         </section>
     {% endif %}
 </main>

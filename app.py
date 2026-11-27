@@ -140,8 +140,8 @@ def load_sample_findings():
     return findings
 
 
-def load_public_readiness(repo_url, job_id):
-    """해당 저장소의 완료된 검사 작업에서 판정 결과를 가져온다."""
+def load_scan_job(repo_url, job_id):
+    """저장소와 일치하는 검사 작업의 상태를 조회한다."""
     try:
         if str(uuid.UUID(job_id)) != job_id:
             return None
@@ -154,8 +154,15 @@ def load_public_readiness(repo_url, job_id):
     if (
         not isinstance(job, dict)
         or job.get("repo_url") != repo_url
-        or job.get("status") != "done"
+        or job.get("status") not in ("queued", "running", "done", "failed")
     ):
+        return None
+    return job
+
+
+def public_readiness_from_job(job):
+    """완료된 작업의 공개 전환 판정만 반환한다."""
+    if job is None or job.get("status") != "done":
         return None
     verdict = job.get("public_readiness")
     if not isinstance(verdict, dict):
@@ -167,6 +174,11 @@ def load_public_readiness(repo_url, job_id):
     if can_publish != (not reasons):
         return None
     return verdict
+
+
+def load_public_readiness(repo_url, job_id):
+    """해당 저장소의 완료된 검사 작업에서 판정 결과를 가져온다."""
+    return public_readiness_from_job(load_scan_job(repo_url, job_id))
 
 
 @app.route("/results")
@@ -182,11 +194,14 @@ def results():
             app.logger.exception("MySQL 검사 결과 조회 실패")
             return "검사 결과 DB에 연결할 수 없습니다. 잠시 후 다시 확인해 주세요.", 503
         job_id = request.args.get("job_id", "").strip()
-        public_readiness = load_public_readiness(repo_url, job_id) if job_id else None
+        job = load_scan_job(repo_url, job_id) if job_id else None
+        public_readiness = public_readiness_from_job(job)
+        scan_status = job["status"] if job else "unknown"
         return render_template(
             "result.html", findings=findings, missing_files=[],
             repo_url=repo_url, source="database",
             job_id=job_id, public_readiness=public_readiness,
+            scan_status=scan_status,
         )
 
     sample_files = [
@@ -341,4 +356,12 @@ def update_finding(finding_id):
         if conn:
             conn.close()
 
-    return redirect(url_for("results", repo_url=repo_url), code=303)
+    job_id = request.form.get("job_id", "").strip()
+    result_args = {"repo_url": repo_url}
+    if job_id:
+        try:
+            if str(uuid.UUID(job_id)) == job_id:
+                result_args["job_id"] = job_id
+        except ValueError:
+            pass
+    return redirect(url_for("results", **result_args), code=303)
