@@ -9,6 +9,25 @@ web·worker는 2개씩, queue·db는 1개씩 → **pod 6개**.
 - Docker Desktop + minikube (`brew install minikube`), kubectl
 - 저장소 루트에 `.env` (compose와 같은 파일, `.env.example`을 복사해 비밀번호 채우기)
 
+## 공통 Flask 세션 키 설정 (필수)
+
+web Pod 2개가 같은 세션과 CSRF 토큰을 검증하도록 `.env`에 비어 있지 않은
+`FLASK_SECRET_KEY`를 한 번 생성하여 설정한다. 기존 키가 있다면 유지한다.
+다음 명령은 저장소 루트에서 실행하며, 키가 이미 설정되어 있으면 중단한다.
+
+```bash
+python -c "from pathlib import Path; import secrets; p=Path('.env'); s=p.read_text(encoding='utf-8'); assert not any(l.strip().startswith('FLASK_SECRET_KEY=') for l in s.splitlines()), 'FLASK_SECRET_KEY already exists'; p.write_text(s.rstrip('\n')+'\nFLASK_SECRET_KEY='+secrets.token_hex(32)+'\n', encoding='utf-8')"
+```
+
+macOS에서 `python` 명령이 없다면 `python3`을 사용한다. 빈 키가 이미 있다면
+해당 빈 설정을 제거한 뒤 생성한다. `.env`와 실제 키는 커밋하거나 공유하지 않는다.
+
+새 설치에서는 아래 `create secret` 명령이 키를 함께 등록한다. 기존 설치에서는
+기존 DB 설정을 유지하면서 Secret의 해당 키를 안전하게 갱신하고 Web Deployment를
+재시작한다. 키를 변경하면 기존 로그인/세션 쿠키가 무효화될 수 있다.
+키 항목이 Secret에 없으면 Web Pod가 시작되지 않도록 명시적으로 참조한다.
+빈 문자열은 사용하지 않는다.
+
 ## 실행 (저장소 루트에서)
 
 ```bash
