@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.make_sample_repo import git
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "worker"))
 
@@ -134,6 +136,13 @@ def test_not_a_repo(tmp_path):
         gitleaks.run_gitleaks(tmp_path)
 
 
+def test_missing_scan_report_fails(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(gitleaks.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 0))
+    with pytest.raises(gitleaks.GitleaksError, match="JSON 검사 결과를 읽을 수 없습니다"):
+        gitleaks.run_gitleaks(tmp_path)
+
+
 # --- 국내 규칙(kr-*) 변환 ------------------------------------------------------
 
 @pytest.mark.parametrize("rule,secret,masked", [
@@ -209,3 +218,48 @@ def test_scan_uses_worker_rules_and_masks_pii(tmp_path, monkeypatch):
 def test_explicit_config_is_respected(tmp_path):
     repo = _commit_rule_fixture(tmp_path / "target")
     assert gitleaks.run_gitleaks(repo, repo / ".gitleaks.toml") == []
+
+
+@pytest.mark.skipif(shutil.which(gitleaks.GITLEAKS_BIN) is None, reason="gitleaks 미설치")
+@pytest.mark.parametrize("has_historical_findings", [False, True])
+def test_public_readiness_cli(tmp_path, has_historical_findings):
+    repo = tmp_path / "target"
+    if has_historical_findings:
+        _commit_rule_fixture(repo)
+        git(repo, "rm", "seed.txt")
+    else:
+        repo.mkdir()
+        git(repo, "init", "-q")
+        (repo / "README.md").write_text("# Clean sample\n", encoding="utf-8")
+        git(repo, "add", "README.md")
+    git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "clean worktree")
+
+    report = tmp_path / "readiness.json"
+    findings_report = tmp_path / "findings.json"
+    subprocess.run([
+        sys.executable, "-m", "worker.scanners.gitleaks", str(repo),
+        "--out", str(findings_report), "--readiness", str(report),
+    ], cwd=ROOT, capture_output=True, check=True)
+
+    verdict = json.loads(report.read_text(encoding="utf-8"))
+    assert verdict["can_publish"] is not has_historical_findings
+    rules = {"kr-rrn", "kr-mobile", "kr-student-id"} if has_historical_findings else set()
+    assert {r["rule_id"] for r in verdict["reasons"]} == rules
+    for reason in verdict["reasons"]:
+        assert set(reason) == {"rule_id", "severity", "file", "line"}
+        assert reason["file"] == "seed.txt"
+
+
+def test_public_readiness_cli_rejects_shallow_clone(tmp_path):
+    repo = _commit_rule_fixture(tmp_path / "target")
+    shallow_repo = tmp_path / "shallow"
+    git(repo, "clone", "-q", "--depth=1", repo.as_uri(), str(shallow_repo))
+    report = tmp_path / "readiness.json"
+    result = subprocess.run([
+        sys.executable, "-m", "worker.scanners.gitleaks", str(shallow_repo),
+        "--readiness", str(report),
+    ], cwd=ROOT, capture_output=True, text=True)
+
+    assert result.returncode != 0
+    assert "전체 이력" in result.stderr
+    assert not report.exists()

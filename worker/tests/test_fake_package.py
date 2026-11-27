@@ -425,5 +425,6 @@ def test_worker_runs_fake_package_scan(monkeypatch):
     monkeypatch.setattr(main.aggregator, "save_to_db",
                         lambda conn, repo, findings: saved.update(findings=findings) or {"saved": 1, "fixed": 0})
 
-    main.process_job({"repo_url": "https://github.com/user/repo"})
+    result = main.process_job({"repo_url": "https://github.com/user/repo"})
     assert [f["tool"] for f in saved["findings"]] == ["fake-package"]
+    assert result["public_readiness"] == {"can_publish": True, "reasons": []}

@@ -1,4 +1,5 @@
 
+import html
 import json
 import os
 import re
@@ -25,6 +26,7 @@ queue = valkey.Valkey(
 
 # 임시 작업 대기열 이름 (팀원과 협의 후 확정)
 QUEUE_NAME = "commitguard:scan:pending"
+STATUS_PREFIX = "commitguard:scan:status:"
 
 
 @app.route("/")
@@ -54,10 +56,10 @@ def scan():
         return "검사 요청을 등록할 수 없습니다.", 503
 
     # 등록한 검사 작업의 결과를 DB에서 조회할 수 있도록 링크를 제공한다.
-    results_url = url_for("results", repo_url=repo_url)
+    results_url = url_for("results", repo_url=repo_url, job_id=job["job_id"])
     return (
         f'검사 요청 등록 성공! 작업 번호: {job["job_id"]}. '
-        f'<a href="{results_url}">검사 완료 후 결과 확인</a>',
+        f'<a href="{html.escape(results_url)}">검사 완료 후 결과 확인</a>',
         202,
     )
 
@@ -138,6 +140,34 @@ def load_sample_findings():
     return findings
 
 
+def load_public_readiness(repo_url, job_id):
+    """해당 저장소의 완료된 검사 작업에서 판정 결과를 가져온다."""
+    try:
+        if str(uuid.UUID(job_id)) != job_id:
+            return None
+        payload = queue.get(STATUS_PREFIX + job_id)
+        if payload is None:
+            return None
+        job = json.loads(payload)
+    except (ValueError, valkey.exceptions.ValkeyError):
+        return None
+    if (
+        not isinstance(job, dict)
+        or job.get("repo_url") != repo_url
+        or job.get("status") != "done"
+    ):
+        return None
+    verdict = job.get("public_readiness")
+    if not isinstance(verdict, dict):
+        return None
+    reasons = verdict.get("reasons")
+    can_publish = verdict.get("can_publish")
+    if not isinstance(reasons, list) or not isinstance(can_publish, bool):
+        return None
+    if can_publish != (not reasons):
+        return None
+    return verdict
+
 
 @app.route("/results")
 def results():
@@ -151,9 +181,12 @@ def results():
         except Exception:
             app.logger.exception("MySQL 검사 결과 조회 실패")
             return "검사 결과 DB에 연결할 수 없습니다. 잠시 후 다시 확인해 주세요.", 503
+        job_id = request.args.get("job_id", "").strip()
+        public_readiness = load_public_readiness(repo_url, job_id) if job_id else None
         return render_template(
             "result.html", findings=findings, missing_files=[],
             repo_url=repo_url, source="database",
+            job_id=job_id, public_readiness=public_readiness,
         )
 
     sample_files = [

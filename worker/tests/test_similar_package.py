@@ -511,8 +511,9 @@ def test_worker_runs_typosquat_scan(monkeypatch):
     monkeypatch.setattr(main.aggregator, "get_connection", lambda: conn)
     monkeypatch.setattr(main.aggregator, "save_to_db", save)
 
-    main.process_job({"repo_url": "https://github.com/user/repo"})
+    result = main.process_job({"repo_url": "https://github.com/user/repo"})
     assert [(f["tool"], f["title"].split()[3]) for f in saved["findings"]] == [("similar-package", "reqeusts")]
+    assert result["public_readiness"] == {"can_publish": True, "reasons": []}
 
 
 def test_worker_does_not_save_when_typosquat_fails(monkeypatch):
