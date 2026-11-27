@@ -22,6 +22,12 @@ spec:
           envFrom:
             - configMapRef: { name: commitguard-config }   # VALKEY_HOST 등
             - secretRef: { name: commitguard-secret }      # MYSQL_* 비밀번호 등
+          env:
+            - name: FLASK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: commitguard-secret
+                  key: FLASK_SECRET_KEY
           readinessProbe:
             httpGet:
               path: /
