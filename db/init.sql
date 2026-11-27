@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS findings (
   why         TEXT,                               -- 왜 위험한지
   fix         TEXT,                               -- 어떻게 고치는지
   status      VARCHAR(10)  NOT NULL DEFAULT 'open', -- open / fixed / ignored
+  assignee VARCHAR(100) NULL,
   fingerprint VARCHAR(255) NOT NULL,              -- 검사마다 같은 결과를 구분하는 값
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
