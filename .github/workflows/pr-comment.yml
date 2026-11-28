@@ -1,0 +1,79 @@
+# pr-comment: PR이 열리거나 새 커밋이 올라오면 CommitGuard 검사를 돌리고,
+# 결과 요약을 그 PR에 댓글로 단다. (worker/pr_comment.py)
+#
+# - 검사는 worker 이미지 안에서 돌린다 → 웹 서비스(worker)와 같은 Gitleaks·Trivy 버전과 규칙을 쓴다.
+#   Gitleaks · Trivy · 가짜 패키지 · 유사 이름 패키지 4가지.
+# - 같은 PR에 다시 돌면 새 댓글을 달지 않고 이전 CommitGuard 댓글을 고친다.
+# - 댓글만 다는 워크플로라서 문제가 발견돼도 실패(빨간 X)로 만들지 않는다.
+#   비밀키로 PR을 막는 일은 secret-scan, 취약점으로 막는 일은 image-scan이 맡는다.
+name: pr-comment
+
+on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write          # PR에 댓글을 달고 고칠 권한
+
+# 같은 PR에 커밋이 연달아 올라오면 이전 실행은 취소하고 마지막 것만 댓글로 남긴다
+concurrency:
+  group: pr-comment-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  comment:
+    # fork에서 온 PR은 GITHUB_TOKEN이 읽기 전용이라 댓글을 달 수 없어 건너뛴다
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # fetch-depth: 0 → Gitleaks가 Git 이력 전체를 볼 수 있게 한다 (worker와 같은 방식)
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: worker 이미지 만들기
+        run: docker build -t commitguard-worker:ci ./worker
+
+      # 취약점 DB(수백 MB)를 실행마다 새로 받지 않도록 캐시한다 (image-scan과 같은 방식)
+      - name: Trivy DB 캐시
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+
+      # 각 검사기를 명령줄로 돌려 공통 형식 JSON을 만든다.
+      # - Gitleaks는 우리 저장소용 .gitleaks.toml을 쓴다 (테스트용 가짜 키 폴더 제외, secret-scan과 같음)
+      #   .gitleaks.toml이 worker/gitleaks.toml을 상대 경로로 불러오므로 저장소 폴더(/repo)에서 실행한다
+      # - 저장소 폴더 주인(러너)과 컨테이너 사용자(root)가 달라도 git이 거부하지 않도록 safe.directory를 연다
+      - name: CommitGuard 검사 (Gitleaks · Trivy · 가짜·유사 패키지)
+        run: |
+          mkdir -p ~/.cache/trivy "$RUNNER_TEMP/cg"
+          run() {
+            docker run --rm \
+              -v "$GITHUB_WORKSPACE:/repo:ro" \
+              -v "$RUNNER_TEMP/cg:/out" \
+              -v ~/.cache/trivy:/root/.cache/trivy \
+              -w /repo -e PYTHONPATH=/app \
+              -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+              --entrypoint python commitguard-worker:ci "$@"
+          }
+          run -m scanners.gitleaks /repo --config .gitleaks.toml --out /out/gitleaks.json
+          run -m scanners.trivy /repo --out /out/trivy.json
+          run -m scanners.fake_package /repo --out /out/fake-package.json
+          run -m scanners.similar_package /repo --out /out/similar-package.json
+
+      # 댓글 내용을 Actions 실행 화면(Summary)에도 남긴다
+      - name: 댓글 내용 미리 보기 (Summary 화면)
+        run: |
+          python worker/pr_comment.py "$RUNNER_TEMP"/cg/*.json --dry-run >> "$GITHUB_STEP_SUMMARY"
+
+      - name: PR에 댓글 달기 (있으면 고치기)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python worker/pr_comment.py "$RUNNER_TEMP"/cg/*.json \
+            --repo "${{ github.repository }}" --pr "${{ github.event.pull_request.number }}"
