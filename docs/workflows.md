@@ -10,6 +10,7 @@ PR은 워크플로가 모두 초록색(✅)이어야 머지한다.
 | secret-scan | 우리 저장소 Git 이력 전체에 비밀키·개인정보가 있는지 검사 (Gitleaks) | `.github/workflows/secret-scan.yml`, `.gitleaks.toml` |
 | image-scan | web·worker 이미지의 알려진 취약점(CVE) 검사 (Trivy) | `.github/workflows/image-scan.yml` |
 | compose-test | 컨테이너 4개를 띄워 검사 1건이 web → queue → worker → db까지 도는지 확인 | `.github/workflows/compose-test.yml`, `scripts/compose_test.sh` |
+| pr-comment | PR에서 CommitGuard 검사(Gitleaks·Trivy·가짜·유사 패키지)를 돌려 결과 요약을 PR 댓글로 단다 (실패시키지 않음) | `.github/workflows/pr-comment.yml`, `worker/pr_comment.py` |
 
 ## 실패했을 때 확인하는 법
 
@@ -86,6 +87,21 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.76.
 docker compose up -d --build --wait
 bash scripts/compose_test.sh
 docker compose down          # -v를 붙이면 db 데이터까지 지워진다
+```
+
+## pr-comment (PR 자동 댓글)
+
+- **언제**: develop·main으로 가는 PR이 열리거나(opened) 새 커밋이 올라오거나(synchronize) 다시 열릴 때(reopened).
+- **하는 일**: `./worker`로 worker 이미지를 만들고, 그 안에서 웹 서비스와 같은 검사기 4개(`scanners.gitleaks`, `scanners.trivy`, `scanners.fake_package`, `scanners.similar_package`)를 명령줄로 돌려 공통 형식 JSON을 만든다. 그 결과를 `worker/pr_comment.py`가 합쳐 PR에 댓글로 단다.
+- **댓글은 하나만**: 같은 PR에 다시 돌면 새 댓글을 달지 않고 `<!-- commitguard-report -->` 표시가 있는 이전 댓글을 고친다.
+- **실패시키지 않음**: 문제가 발견돼도 빨간 X가 되지 않는다. PR을 막는 일은 secret-scan(비밀키)·image-scan(취약점)이 맡는다. 검사기 실행 자체가 실패하면(설정 오류 등) 빨간 X가 된다.
+- **Gitleaks 규칙**: secret-scan과 같은 `.gitleaks.toml`을 써서 테스트용 가짜 키 폴더는 뺀다.
+- **권한**: Actions가 주는 `GITHUB_TOKEN`에 `pull-requests: write`만 준다. 따로 등록할 비밀값은 없다. fork에서 온 PR은 토큰이 읽기 전용이라 이 워크플로를 건너뛴다.
+- **결과 보는 곳**: PR 대화 탭의 CommitGuard 댓글. 같은 내용이 Actions 실행의 **Summary** 화면에도 나온다.
+- **내 컴퓨터에서 댓글 내용만 보기**:
+
+```bash
+python worker/pr_comment.py samples/gitleaks-findings.json samples/trivy-findings.json --dry-run
 ```
 
 ## 참고
