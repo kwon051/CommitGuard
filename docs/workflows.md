@@ -10,6 +10,7 @@ PR은 워크플로가 모두 초록색(✅)이어야 머지한다.
 | secret-scan | 우리 저장소 Git 이력 전체에 비밀키·개인정보가 있는지 검사 (Gitleaks) | `.github/workflows/secret-scan.yml`, `.gitleaks.toml` |
 | image-scan | web·worker 이미지의 알려진 취약점(CVE) 검사 (Trivy) | `.github/workflows/image-scan.yml` |
 | compose-test | 컨테이너 4개를 띄워 검사 1건이 web → queue → worker → db까지 도는지 확인 | `.github/workflows/compose-test.yml`, `scripts/compose_test.sh` |
+| deploy | 임시 Kubernetes(kind)에 배포해 pod 6개 Ready·검사 1건 확인 → develop·main push면 이미지를 ghcr.io에 올림 | `.github/workflows/deploy.yml`, `scripts/k8s_test.sh` |
 
 ## 실패했을 때 확인하는 법
 
@@ -86,6 +87,28 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.76.
 docker compose up -d --build --wait
 bash scripts/compose_test.sh
 docker compose down          # -v를 붙이면 db 데이터까지 지워진다
+```
+
+## deploy
+
+- **하는 일**: 두 단계로 나뉜다.
+  1. **k8s-deploy** (PR·push 모두): web·worker 이미지를 만들고, Actions 러너 안에 임시 Kubernetes(kind)를 띄워 `docs/k8s.md`와 같은 순서로 `k8s/`를 적용한다. pod 6개(web 2·worker 2·queue 1·db 1)가 모두 Ready인지 보고, `scripts/k8s_test.sh`로 검사 1건이 web → queue → worker → db까지 도는지 확인한다.
+  2. **publish** (develop·main에 push됐을 때만): 1을 통과한 이미지를 `ghcr.io/<저장소 주인>/commitguard-web`, `commitguard-worker`로 올린다. 태그는 커밋 번호 7자리와 브랜치 이름이고, main이면 `latest`도 붙는다. PR에서는 올리지 않는다.
+- **비밀번호**: 러너에는 `.env`가 없어서 가짜 값이 든 `.env.example`로 Secret을 만든다. `FLASK_SECRET_KEY`는 실행마다 무작위로 만든다. ghcr.io 로그인은 Actions가 주는 `GITHUB_TOKEN`을 써서 따로 등록할 비밀값이 없다.
+- **결과 보는 곳**: Actions → deploy 실행 → **Summary** 화면에 pod 목록 표(이름·Ready·상태·재시작)와 올린 이미지 태그가 나온다. 발표 캡처는 이 화면을 쓰면 된다.
+- **시간**: 처음 검사는 worker의 Trivy가 취약점 DB를 받느라 3분쯤 걸려서 전체 8~10분 걸린다.
+- **실패하면**:
+
+| 실패한 단계 | 뜻 | 볼 곳 |
+|---|---|---|
+| pod 6개 Ready 기다리기 | 이미지 오류, Secret 누락, db 준비 실패 등으로 pod가 안 뜸 | "실패 시 로그"의 events와 app별 로그 |
+| 검사 1건 끝까지 돌려 보기 | compose-test와 같은 메시지. web 접속 실패 / worker 실패 / 시간 초과 / db 결과 없음 | 그 단계 메시지와 worker 로그 |
+| publish | ghcr.io 로그인·업로드 실패. 저장소 Settings → Actions → Workflow permissions 확인 | 그 단계 로그 |
+
+- **내 컴퓨터에서** (minikube로 `docs/k8s.md`대로 띄운 뒤):
+
+```bash
+bash scripts/k8s_test.sh
 ```
 
 ## 참고
