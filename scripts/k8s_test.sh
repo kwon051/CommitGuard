@@ -25,7 +25,7 @@ kube port-forward svc/web "$PORT:5000" >/dev/null 2>&1 &
 pf_pid=$!
 trap 'kill "$pf_pid" 2>/dev/null || true' EXIT
 for _ in $(seq 1 30); do
-  if curl -fsS -o /dev/null "$WEB_URL/"; then break; fi
+  if curl -fs -o /dev/null "$WEB_URL/"; then break; fi   # port-forward가 열릴 때까지 조용히 재시도
   sleep 1
 done
 if ! curl -fsS -o /dev/null "$WEB_URL/"; then
@@ -78,8 +78,9 @@ done
 
 echo "③ db에 결과가 저장됐는지 확인"
 # 비밀번호는 db pod 안의 환경변수(Secret에서 온 값)를 그대로 쓴다
+# -h 127.0.0.1: 소켓 대신 TCP로 접속 (kind에서 소켓 경로가 어긋나는 문제, k8s/db.yaml 주석 참고)
 count=$(kube exec deploy/db -- env REPO_URL="$REPO_URL" sh -c \
-  'MYSQL_PWD="$MYSQL_PASSWORD" mysql -N -u"$MYSQL_USER" "$MYSQL_DATABASE" \
+  'MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -N -u"$MYSQL_USER" "$MYSQL_DATABASE" \
      -e "SELECT COUNT(*) FROM findings WHERE repo_url = '"'"'$REPO_URL'"'"'"' | tr -d '[:space:]')
 echo "   findings 테이블: ${count}건"
 if [ "${count:-0}" -lt 1 ]; then
