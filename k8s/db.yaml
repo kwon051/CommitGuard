@@ -50,9 +50,12 @@ spec:
             - name: init
               mountPath: /docker-entrypoint-initdb.d
               readOnly: true
+          # 3306 포트가 열렸는지로 준비 여부를 본다. MySQL은 첫 초기화 중에는 3306을 열지 않는다.
+          # (mysqladmin ping은 소켓 경로에 의존해서, GitHub Actions의 kind에서는
+          #  서버와 소켓 경로가 어긋나 계속 실패했다 → deploy 워크플로)
           readinessProbe:
-            exec:
-              command: ["mysqladmin", "ping", "-h", "localhost"]
+            tcpSocket:
+              port: 3306
             initialDelaySeconds: 10
             periodSeconds: 5
       volumes:
